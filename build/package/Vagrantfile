@@ -1,0 +1,104 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# This vagrantfile creates a VM with the development environment
+# configured and ready to go.
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+#Set the default provider to libvirt in the case they forget --provider=libvirt or if someone destroys a machine it reverts to virtualbox
+ENV['VAGRANT_DEFAULT_PROVIDER'] = 'libvirt'
+
+# Check required plugins
+REQUIRED_PLUGINS_LIBVIRT = %w(vagrant-libvirt)
+exit unless REQUIRED_PLUGINS_LIBVIRT.all? do |plugin|
+  Vagrant.has_plugin?(plugin) || (
+    puts "The #{plugin} plugin is required. Please install it with:"
+    puts "$ vagrant plugin install #{plugin}"
+    false
+  )
+end
+
+REQUIRED_PLUGINS_PROXY = %w(vagrant-proxyconf)
+exit unless REQUIRED_PLUGINS_PROXY.all? do |plugin|
+  Vagrant.has_plugin?(plugin) || (
+    puts "The #{plugin} plugin is required. Please install it with:"
+    puts "$ vagrant plugin install #{plugin}"
+    false
+  )
+end
+
+Vagrant.configure("2") do |config|
+	#config.ssh.forward_agent = 'true'
+  config.vm.synced_folder '.', '/vagrant', disabled: true
+  
+  # Point to the root of the project directory
+  # Another option is calling w/ VAGRANT_VAGRANTFILE=<path-to-vagrantfile>, and setting synced_folder path to $pwd
+  config.vm.synced_folder '../../', '/home/vagrant/networkservice',
+		:nfs => true, 
+    :nfs_version => 4, 
+    :nfs_udp => false, 
+    :mount_options => ['sec=sys']
+
+  config.vm.provider :libvirt do |domain|
+    # increase nic adapter count to be greater than 8 for all VMs.
+    domain.nic_adapter_count = 130
+    domain.driver = 'kvm'
+    # domain.qemu_use_session = false
+  end
+
+  # Set Siemens proxy settings
+	if Vagrant.has_plugin?("vagrant-proxyconf")
+    config.proxy.http     = "http://proxy.edge.siemens.com:9400/"
+    config.proxy.https    = "http://proxy.edge.siemens.com:9400/"
+    config.proxy.no_proxy = "localhost,127.0.0.1,.example.com"
+  end
+
+  ##### DEFINE VM for test runner #####
+  config.vm.define "vagrant-golang-box" do |device|
+    device.vm.hostname = "vagrant-golang-box" 
+    # Use following in the container, packaged on the host, copied into container
+    device.vm.box = "vagrant-golang"
+
+    # Network interface for running tests against to
+    device.vm.network :private_network,
+      :ip => "172.16.1.42",
+      :mac => "00:0C:29:C2:51:81",
+      :auto_config => false
+    # device.vm.network :private_network,
+    #   :ip => "172.16.2.42",
+    #   :mac => "2a:e8:8b:fe:e9:e1"
+    # device.vm.network :private_network,
+    #   :ip => "172.16.3.42",
+    #   :mac => "2a:e8:8b:fe:e9:e2"
+    # device.vm.network :private_network,
+    #   :ip => "172.16.4.42",
+    #   :mac => "2a:e8:8b:fe:e9:e3"
+    # device.vm.network :private_network,
+    #   :ip => "172.16.5.42",
+    #   :mac => "2a:e8:8b:fe:e9:e4"
+
+
+    device.vm.provider :libvirt do |v|
+      v.memory = 768
+      v.cpus = 1
+    end
+  end
+
+  # Install docker to test mcvlan interfaces
+  config.vm.provision :docker
+
+  # Configure NetworkManager against ifupdown
+  config.vm.provision "shell", inline: "echo Setting up NetworkManager..."
+  # https://wiki.debian.org/NetworkManager#Enabling_Interface_Management
+  config.vm.provision "shell", inline: "sed -i 's/^managed=false/managed=true/' /etc/NetworkManager/NetworkManager.conf"
+  # config.vm.provision "shell", inline: "sed -i '/^plugins=*/a no-auto-default=*' /etc/NetworkManager/NetworkManager.conf"
+  # https://github.com/hashicorp/vagrant/issues/5590#issuecomment-105886361
+  config.vm.provision "shell", inline: "ifdown -a"
+  config.vm.provision "shell", inline: "nmcli connection reload"
+  config.vm.provision "shell", inline: "systemctl restart NetworkManager"
+  config.vm.provision "shell", inline: "echo Setting up NetworkManager [done]..."
+
+end

@@ -6,6 +6,7 @@ import (
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/go-cmp/cmp"
@@ -15,7 +16,7 @@ import (
 var mutex sync.Mutex
 
 //for testing on real device please enter your ethernet typed interface's MAC address.
-const yourMac = "00:0C:29:DF:4C:D7"
+const yourMac = "00:0C:29:C2:51:81"
 
 func Test_Conversions(t *testing.T) {
 
@@ -105,8 +106,14 @@ func Test_ApplyNewNetworkSettingsManualNilDns(t *testing.T) {
 			NetMask: "255.255.255.0",
 			Gateway: "192.168.1.1",
 		},
-		//DNSConfig: &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
-
+		L2Conf: &v1.Interface_L2{
+			StartingAddressIPv4: "192.168.1.27",
+			NetMask:             "255.255.255.0",
+			Range:               "8",
+			Gateway:             "192.168.1.27",
+			AuxiliaryAddresses: map[string]string{ "aux1" : "192.168.1.28"},
+		},
+		InterfaceName: "enp2s0",
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
@@ -120,11 +127,17 @@ func Test_ApplyNewNetworkSettingsManualNilDns(t *testing.T) {
 	log.Println(errs)
 
 	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
 	defer mutex.Unlock()
+
 	newOne := sut.GetInterfaceWithMac(testData.MacAddress)
+
 	log.Println("Read new configuration from system :")
+	log.Println("GOT: ", newOne)
+	log.Println("WANT: ", testData)
 
 	log.Println(newOne)
+
 	if !proto.Equal(newOne.Static, testData.Static) {
 		t.Fail()
 	}
@@ -150,10 +163,7 @@ func Test_ApplyNewNetworkSettingsManualEmptyDns(t *testing.T) {
 			NetMask: "255.255.255.0",
 			Gateway: "192.168.1.1",
 		},
-		//DNSConfig: &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
-		DNSConfig:     &v1.Interface_Dns{},
-		L2Conf:        &v1.Interface_L2{},
-		InterfaceName: "ens33",
+		DNSConfig: &v1.Interface_Dns{},
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
@@ -167,14 +177,15 @@ func Test_ApplyNewNetworkSettingsManualEmptyDns(t *testing.T) {
 	log.Println(errs)
 
 	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
 	defer mutex.Unlock()
 	newOne := sut.GetInterfaceWithMac(testData.MacAddress)
-	log.Println("Read new configuration from system :")
 
-	log.Println(newOne)
-	if !proto.Equal(newOne, testData) {
-		t.Log(newOne)
-		t.Log(testData)
+	log.Println("Read new configuration from system :")
+	log.Println("GOT: ", newOne)
+	log.Println("WANT: ", testData)
+
+	if !proto.Equal(newOne.Static, testData.Static) {
 		t.Fail()
 	}
 
@@ -200,9 +211,7 @@ func Test_ApplyNewNetworkSettingsManual(t *testing.T) {
 			NetMask: "255.255.255.0",
 			Gateway: "192.168.1.1",
 		},
-		DNSConfig:     &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
-		L2Conf:        &v1.Interface_L2{},
-		InterfaceName: "ens33",
+		DNSConfig: &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
@@ -216,12 +225,16 @@ func Test_ApplyNewNetworkSettingsManual(t *testing.T) {
 	log.Println(errs)
 
 	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
 	defer mutex.Unlock()
 	newOne := sut.GetInterfaceWithMac(testData.MacAddress)
+
 	log.Println("Read new configuration from system :")
+	log.Println("GOT: ", newOne)
+	log.Println("WANT: ", testData)
 
 	log.Println(newOne)
-	if !proto.Equal(newOne, testData) {
+	if !proto.Equal(newOne.Static, testData.Static) {
 		t.Fail()
 	}
 
@@ -243,8 +256,6 @@ func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
 		DHCP:             "enabled",
 		Static:           &v1.Interface_StaticConf{},
 		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
-		L2Conf:           &v1.Interface_L2{},
-		InterfaceName:    "ens33",
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
@@ -252,6 +263,7 @@ func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
 	sut := NewNetworkConfiguratorWithNM(gonm)
 
 	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
 	defer mutex.Unlock()
 	if err != nil {
 		t.Fail()

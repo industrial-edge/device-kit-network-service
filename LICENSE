@@ -1,0 +1,6 @@
+License Conditions for Industrial Edge Device Kit 
+
+The Industrial Edge Device Kit (SW) shall be delivered in source-code-form. 
+You are entitled to modify the SW for the sole purpose of porting to a different hardware and/or operating system, to integrate the SW – whether modified in such way or not – in your own Device software and to use the SW as firmware (i.e. in object-code-form only) as integrated part of your Industrial Edge Devices for internal validation purposes.
+Any copying or distribution of the Industrial Edge Devices containing the SW as firmware (i.e. in object-code-form only) is not allowed.
+Any further distribution of the SW is not allowed. In particular you shall not unhinge parts of the SW and use or distribute them separately. 

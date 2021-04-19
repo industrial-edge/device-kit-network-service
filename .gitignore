@@ -16,3 +16,4 @@ build/package/debian/changelog
 build/package/debian/network-service/
 build/package/debian/.debhelper/
 build/package/dist**
+build/package/.vagrant/
