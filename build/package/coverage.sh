@@ -23,8 +23,8 @@ cat "${COVERAGE_DIR}"/coverage_all.cov | grep -v "mocks" >> "${COVERAGE_DIR}"/co
 go tool cover -func="${COVERAGE_DIR}"/coverage.cov | tee coverage_global.txt;
 
 go tool cover -html="${COVERAGE_DIR}"/coverage.cov -o coverage.html ;
-
+ 
 
 # Remove the coverage files directory
-# cp "$COVERAGE_DIR"/coverage.cov .; # We are currently running the Sonarqube as manual. this line will be used when automated.
+cp "$COVERAGE_DIR"/coverage.cov .;
 rm -rf "$COVERAGE_DIR";

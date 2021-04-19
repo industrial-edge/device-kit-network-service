@@ -14,7 +14,6 @@ import (
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -152,19 +151,8 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 	log.Println("interfacename :", interfaceName)
 
 	// get layer2 config from device
-	l2device := dockerNetworkGetMacvlanConnection()
-	l2proto := &v1.Interface_L2{}
-	// check interface has layer2 config
-	if l2device.interfaceName == interfaceName{
-		fmt.Println("l2conf.netmask : ", l2device.netmask)
-		fmt.Println("l2conf.startIp : ", l2device.startIp)
-		fmt.Println("l2conf.ipRange  : ", strconv.Itoa(l2device.ipRange))
-
-		l2proto.NetMask = l2device.netmask
-		l2proto.StartingAddressIPv4 = l2device.startIp
-		l2proto.Range = strconv.Itoa(l2device.ipRange)
-	}
-	retVal.L2Conf = l2proto
+	l2device := dockerNetworkGetMacvlanConnection(interfaceName)
+	retVal.L2Conf = l2device
 
 	retVal.InterfaceName = interfaceName
 

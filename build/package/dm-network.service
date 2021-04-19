@@ -3,7 +3,7 @@ Description=Device Model Network Service (go)
 
 
 [Service]
-ExecStartPre=/usr/bin/mkdir -p /var/run/devicemodel
+ExecStartPre=mkdir -p /var/run/devicemodel
 ExecStart=/usr/bin/networkservice unix /var/run/devicemodel/network.sock
 ExecReload=/bin/kill -9 $MAINPID
 Type=simple

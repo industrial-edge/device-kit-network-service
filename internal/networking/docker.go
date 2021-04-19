@@ -7,9 +7,9 @@ package networking
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"math"
+	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -21,6 +21,8 @@ type L2Config struct {
 	netmask  string
 	startIp string
 	ipRange int
+	gateway string
+	auxiliaryAddresses map[string]string
 }
 
 
@@ -47,6 +49,7 @@ type Conf struct {
 	Subnet string `json:"Subnet"`
 	IPRange string `json:"IPRange"`
 	Gateway string `json:"Gateway"`
+	AuxiliaryAddresses map[string]string `json:"AuxiliaryAddresses"`
 }
 
 type Container struct {
@@ -57,31 +60,31 @@ type Container struct {
 	IPv6Address string `json:"IPv6Address"`
 }
 
-func dockerNetworkGetMacvlanConnection() L2Config{
-	var l2Conf L2Config
+var execCommand = exec.Command
+
+func dockerNetworkGetMacvlanConnection(interfaceName string) *v1.Interface_L2{
+	retVal := &v1.Interface_L2{}
 	// Run docker network ls
 	// docker network ls --format "{{.Name}}" --filter driver=macvlan
 	cmdLs := "docker network ls --format \"{{.Name}}\" --filter driver=macvlan"
-	macVlanName, err := exec.Command("/bin/bash", "-c", cmdLs).Output()
-
+	macVlanName, err := execCommand("/bin/bash", "-c", cmdLs).Output()
 	if err != nil || len(macVlanName) <= 0 {
 		log.Println("docker network ls : ", err)
-		return l2Conf
+		return retVal
 	}
 
 	cmdInspect := "docker network inspect " + string(macVlanName)
-	inspectOutJson, err2 := exec.Command("/bin/bash", "-c", cmdInspect).Output()
-
-	if err2 != nil || len(inspectOutJson) <= 0 {
+	inspectOutJSON, err2 := execCommand("/bin/bash", "-c", cmdInspect).Output()
+	if err2 != nil || len(inspectOutJSON) <= 0 {
 		log.Println("docker network inspect  : ", err2)
-		return l2Conf
+		return retVal
 	}
 
 	var structuredData []DockerNetworkLS
-	err = json.Unmarshal(inspectOutJson, &structuredData)
+	err = json.Unmarshal(inspectOutJSON, &structuredData)
 	if err != nil {
-		fmt.Println(err)
-		return l2Conf
+		log.Println(err)
+		return retVal
 	}
 	subnetPrefixString :=  strings.Split(structuredData[0].IPAM.Config[0].Subnet, "/")
 	subnetPrefixUint, _ := strconv.ParseUint(subnetPrefixString[1], 10, 32)
@@ -90,15 +93,23 @@ func dockerNetworkGetMacvlanConnection() L2Config{
 	startIPPrefix, _ := strconv.ParseUint(startIP[1], 10, 32)
     // prefix should be between 0-32
 	if startIPPrefix > 32  || startIPPrefix < 0{
-		return l2Conf
+		return retVal
 	}
 	exponent := 32 - startIPPrefix
 	ipRange := int(math.Pow(2, float64(exponent)))
 
-	l2Conf.interfaceName = structuredData[0].Options["parent"]
-	l2Conf.netmask       = ParseNetMask(uint32(subnetPrefixUint))
-	l2Conf.startIp       = startIP[0]
-	l2Conf.ipRange       = ipRange
+	// check interface has layer2 config
+    if structuredData[0].Options["parent"] == interfaceName{
+		retVal.NetMask = ParseNetMask(uint32(subnetPrefixUint))
+		retVal.StartingAddressIPv4 =  startIP[0]
+		retVal.Range = strconv.Itoa(ipRange)
+		retVal.Gateway = structuredData[0].IPAM.Config[0].Gateway
+		retVal.AuxiliaryAddresses = make(map[string]string)
+		// Copy from the  l2device.auxiliaryAddresses map to the l2proto.AuxiliaryAddresses map
+		for key, value := range structuredData[0].IPAM.Config[0].AuxiliaryAddresses {
+			retVal.AuxiliaryAddresses[key] = value
+		}
+    }
 
-	return l2Conf
+	return retVal
 }

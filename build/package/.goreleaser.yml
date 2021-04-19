@@ -22,16 +22,20 @@ builds:
       - linux
     goarch:
       - amd64
+      - arm64
+      - arm
+    goarm:
+      - 7
     ldflags: -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.buildTime={{.Date}}`.
 
 nfpms:
 - 
 
   #file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-  file_name_template: "{{ .ProjectName }}_{{ .Env.TAG }}_{{ .Os }}_{{ .Arch }}"
+  #file_name_template: "{{ .ProjectName }}_{{ .Env.TAG }}_{{ .Os }}_{{ .Arch }}"
 
   vendor: Siemens AG
-  homepage: https://code.siemens.com/industrial-edge/product/device-kit
+  homepage: https://code.siemens.com/industrial-edge/product/device-kit/products/industrial-edge-device-kit/iedk-services/network-service
   maintainer: G-TR DS PROJ INDUSTRIAL EDGE TeamIceEdge <dsprojindustrialedgeteamiceedge.tr@internal.siemens.com>
   description: Network Service is gRPC & GO  based Network Configuration service
   license: Copyright (c) 2020 Siemens AG
@@ -42,6 +46,8 @@ nfpms:
 
 # Packages your package depends on.
   dependencies:
+    - network-manager
+    - docker-ce-cli
 
   files:
     "dm-network.service": "/lib/systemd/system/dm-network.service"
