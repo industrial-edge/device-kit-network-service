@@ -234,6 +234,11 @@ func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.Connect
 				connection[IPV4Key][DNSKey] = []uint32{dns1, dns2}
 			}
 		}
+
+		if protoData.DHCP == Enabled{
+			// If connection already has DNS config which gathered from DHCP, ignore it.
+			connection[IPV4Key][DNSIgnoreAutoKey] = Yes
+		}
 	}
 
 	connection[ConnectionKey][IDKey] = fmt.Sprintf("%s_%s_%s", deviceName, protoData.MacAddress, connectionSuffix)

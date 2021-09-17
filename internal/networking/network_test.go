@@ -141,7 +141,6 @@ func Test_ApplyNewNetworkSettingsManualNilDns(t *testing.T) {
 	if !proto.Equal(newOne.Static, testData.Static) {
 		t.Fail()
 	}
-
 	if newOne == nil {
 		t.Fail()
 	}
@@ -238,6 +237,11 @@ func Test_ApplyNewNetworkSettingsManual(t *testing.T) {
 		t.Fail()
 	}
 
+	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()){
+		t.Logf("Expected DNS etry: %s, got: %s", testData.GetDNSConfig(), newOne.GetDNSConfig())
+		t.Fail()
+	}
+
 	if newOne == nil {
 		t.Fail()
 	}
@@ -273,9 +277,17 @@ func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
 	log.Println(newOne)
 
 	if !cmp.Equal(newOne.MacAddress, testData.MacAddress) {
+		t.Logf("Expected Mac: %s , got: %s",testData.MacAddress, newOne.MacAddress)
 		t.Fail()
 	}
+
+	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()){
+		t.Logf("Expected DNS etry: %s, got: %s", testData.GetDNSConfig(), newOne.GetDNSConfig())
+		t.Fail()
+	}
+
 	if !cmp.Equal(newOne.DHCP, testData.DHCP) {
+		t.Logf("expected DHCP: %s , got:  %s",testData.DHCP, newOne.DHCP)
 		t.Fail()
 	}
 

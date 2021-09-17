@@ -14,6 +14,10 @@ const (
 	DNSKey = "dns"
 	// DNSSearchKey
 	DNSSearchKey = "dns-search"
+	// DNSIgnoreAuto
+	DNSIgnoreAutoKey = "ignore-auto-dns"
+	// Yes
+	Yes = 1
 	// Enabled
 	Enabled = "enabled"
 	// Disabled
