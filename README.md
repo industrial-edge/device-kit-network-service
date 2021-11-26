@@ -6,6 +6,24 @@ _Network Service_ is gRPC based network settings configurator microservice. It a
 _Network Service_ is developed in the Go programming language and gRPC. More information can be found [here](https://grpc.io/docs/). The _Network Service_ runs as a systemd service within the device that has a debian-based operating system.
 
 
+
+
+
+
+fasdfasdf
+
+
+
+
+
+asdgasdg
+asdgasdg
+asdg
+
+
+
+
+
 ## Getting Started
 
 ### Prerequisities
