@@ -1,0 +1,62 @@
+project_name: dm-network
+dist: dist
+env:
+  - GO111MODULE=on
+
+# Build customization
+snapshot:
+  # Allows you to change the name of the generated snapshot
+  #
+  # Note that some pipes require this to be semantic version compliant (nfpm,
+  # for example).
+  #
+  # Default is `{{ .Tag }}-SNAPSHOT-{{.ShortCommit}}`.
+  name_template: "{{ .Env.TAG }}"
+
+builds:
+  - main: ../../cmd/networkservice
+    binary: networkservice
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - 7
+    ldflags: -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.buildTime={{.Date}}`.
+
+nfpms:
+- 
+
+  #file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  #file_name_template: "{{ .ProjectName }}_{{ .Env.TAG }}_{{ .Os }}_{{ .Arch }}"
+
+  vendor: Siemens AG
+  homepage: https://github.com/industrial-edge/device-kit-network-service
+  maintainer: https://github.com/industrial-edge/device-kit-network-service
+  description: Network Service is gRPC & GO  based Network Configuration service
+  license: Copyright (c) 2021 Siemens AG
+
+  # Packages to be generated.
+  formats:
+    - deb
+
+# Packages your package depends on.
+  dependencies:
+    - network-manager
+    
+  files:
+    "dm-network.service": "/lib/systemd/system/dm-network.service"
+
+
+  # Override default /usr/local/bin destination for binaries
+  bindir: /usr/bin
+
+  # 
+  scripts:
+    postinstall: "postinstall.sh"
+    preremove: "preremove.sh"
+    postremove: "postremove.sh"

@@ -1,0 +1,71 @@
+/*
+ * Copyright (c) 2021 Siemens AG
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+option go_package = ".;siemens_iedge_dmapi_v1";
+package siemens.iedge.dmapi.network.v1;
+ 
+// Contains MAC address, used for retrieving specified Network Interface settings.
+message NetworkInterfaceRequest  {
+    string mac = 1;
+}
+
+
+// Interface type holds settings for a Network Interface.
+message Interface {
+    bool GatewayInterface = 1; // if true, route metric will be set to 1. Otherwise route metric is -1. Similarly, when the interface is requested,return value will be true if route metric is 1.
+    string MacAddress = 2; // "20:87:56:b5:ed:e0"
+    string DHCP = 3; // values can be 'enabled' or 'disabled'. for compatiblity reasons it is not boolean.
+
+    // StaticConf type holds IP Netmask and Gateway information
+    message StaticConf {
+        string IPv4 = 1; // e.g: 192.168.0.2
+        string NetMask = 2; // e.g: 255.255.255.0
+        string Gateway = 3; // e.g: 192.168.0.1
+    }
+
+    StaticConf Static = 4; // Static field is StaticConf type instance.
+
+    // Type that contains Primary and Secondary DNS.
+    message Dns {
+        string PrimaryDNS = 1; // e.g:  "1.1.1.2"
+        string SecondaryDNS = 2; // e.g: "1.1.1.1"
+    }
+    Dns DNSConfig = 5; // DNSConfig is dns type instance.
+
+    message L2 {
+        string StartingAddressIPv4 = 1; // e.g: 192.168.0.2
+        string NetMask = 2; // e.g: 255.255.255.0
+        string Range = 3;  // e.g: 16
+        string Gateway =4; //e.g: 192.168.2.1
+        map<string,string> AuxiliaryAddresses =5;  //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5 
+    }
+   L2 L2Conf = 6;
+   string InterfaceName = 7;  // ens2p - read only.
+}
+
+// Contains multiple network interface settings. It can be used to apply or get the settings.
+message NetworkSettings {
+    repeated Interface Interfaces = 1; // Network settings contains an array of Interfaces.Applying new settings or receiving current settings is supported for multiple ethernet typed network interfaces supported.On
+}
+
+
+// Network service ,uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
+// protoc  generates both client and server instance for this Service.
+// GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
+service NetworkService {
+    
+    //Returns the settings of all ethernet typed network interfaces
+    rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
+   
+    //Returns the current setting with given MAC address.
+    rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
+       
+    //Applies given configurations to Network Interfaces.
+    rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
+
+}
