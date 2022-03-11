@@ -63,4 +63,6 @@ const (
 	DHCPServerIdentifierKey = "dhcp_server_identifier"
 	// AddressDataKey
 	AddressDataKey = "address-data"
+	// LabelMapFileName
+	LabelMapFileName = "/var/network.label"
 )

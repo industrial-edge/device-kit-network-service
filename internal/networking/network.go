@@ -7,6 +7,7 @@
 package networking
 
 import (
+	"errors"
 	nm "github.com/Wifx/gonetworkmanager"
 	"log"
 	"net"
@@ -20,8 +21,11 @@ type Network interface {
 	ArePreconditionsOk(newSettings *v1.NetworkSettings) (bool, error)
 	Apply(newSettings []*v1.Interface) error
 	GetInterfaceWithMac(mac string) *v1.Interface
+	GetInterfaceWithLabel(Label string) *v1.Interface
 
 	getDeviceWithMac(mac string) nm.DeviceWired
+	getDeviceWithLabel(label string) nm.DeviceWired
+	getMacWithInterfaceName(InterfaceName string) string
 }
 
 // NetworkConfigurator implements Network Interface.
@@ -51,6 +55,15 @@ func (nc *NetworkConfigurator) GetInterfaceWithMac(mac string) *v1.Interface {
 	return DBusToProto(device)
 }
 
+//GetInterfaceWithLabel Returns All Ethernet typed interfaces on a device
+func (nc *NetworkConfigurator) GetInterfaceWithLabel(Label string) *v1.Interface {
+	device := nc.getDeviceWithLabel(Label)
+	if device == nil {
+		log.Println("Device is not found: ", Label)
+	}
+	return DBusToProto(device)
+}
+
 //GetEthernetInterfaces Returns All Ethernet typed interfaces on a device
 func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
 
@@ -67,12 +80,12 @@ func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
 	return interfaces
 }
 
-// Checks all preconditions before applying any settings.
+// ArePreconditionsOk Checks all preconditions before applying any settings.
 func (nc *NetworkConfigurator) ArePreconditionsOk(newSettings *v1.NetworkSettings) (bool, error) {
 	return verify(newSettings, nc)
 }
 
-// Applies given settings, if any error occures all Interfaces in system will be restored to original states.
+// Apply Applies given settings, if any error occures all Interfaces in system will be restored to original states.
 func (nc *NetworkConfigurator) Apply(newSettings *v1.NetworkSettings) error {
 	log.Println("new settings request -- ", newSettings)
 	var backups []nm.ConnectionSettings
@@ -86,6 +99,7 @@ func (nc *NetworkConfigurator) Apply(newSettings *v1.NetworkSettings) error {
 		//add backup if any active connections exists before
 		if backup != nil {
 			backups = append(backups, backup)
+			log.Println("backup  : > ", backup)
 		}
 		//if any error occurs, all interfaces will be RESTOREd to original
 		if err != nil {
@@ -117,9 +131,26 @@ func (nc *NetworkConfigurator) getDeviceWithMac(mac string) nm.DeviceWired {
 		}
 	}
 	if retVal == nil {
-		log.Println("Device does not exist: ", mac)
+		log.Println("getDeviceWithMac Device does not exist: ", mac)
 	}
 	return retVal
+}
+
+// getDeviceWithLabel returns a device which has a label match with input parameter
+func (nc *NetworkConfigurator) getDeviceWithLabel(label string) nm.DeviceWired {
+	expectedInterface := getInterfaceForLabel(label)
+
+	for _, device := range nc.getAllEthernetDevices() {
+		interfaceName, _ := device.GetPropertyInterface()
+
+		if strings.ToUpper(expectedInterface) == strings.ToUpper(interfaceName) {
+			log.Println("getDeviceWithLabel Device Found for the label: ", label)
+			return device
+		}
+	}
+
+	log.Println("getDeviceWithLabel Device does not exist for: ", label)
+	return nil
 }
 
 func (nc *NetworkConfigurator) getAllEthernetDevices() []nm.DeviceWired {
@@ -140,13 +171,29 @@ func (nc *NetworkConfigurator) getAllEthernetDevices() []nm.DeviceWired {
 
 func (nc *NetworkConfigurator) tryApply(protoData *v1.Interface) (nm.ConnectionSettings, error) {
 	mac := strings.ToUpper(protoData.MacAddress)
-	device := nc.getDeviceWithMac(mac)
+
+	var device nm.DeviceWired
+	log.Println("tryApply protoData : ", protoData)
+
+	if protoData.MacAddress != "" {
+		log.Println("tryApply, protoData.MacAddress is not empty ,", protoData.MacAddress)
+		device = nc.getDeviceWithMac(mac)
+	} else if protoData.Label != "" {
+		log.Println("tryApply, protoData.Label is not empty  ", protoData.Label)
+		device = nc.getDeviceWithLabel(protoData.Label)
+	} else {
+		return nil, errors.New("error, Mac address or Interface name should be entered")
+	}
+
 	backup := nc.createBackupFromExisting(device)
 
 	deviceName, _ := device.GetPropertyInterface()
 	settings := newSettingsFromProto(protoData, deviceName)
 	//delete all existing connection profiles for this device
 	nc.deleteOldConnections(device)
+
+	mac, _ = device.GetPropertyHwAddress()
+	mac = strings.ToUpper(mac)
 	//add this
 	err := nc.addConnection(mac, settings)
 
@@ -164,6 +211,7 @@ func (nc *NetworkConfigurator) createBackupFromExisting(wired nm.DeviceWired) nm
 		backup, _ := list[0].GetSettings()
 		log.Println("created backup for existing connection")
 		// new settings instance needed to be ready for applying backup
+		log.Println(backup)
 		return retrieveSettingsFromBackup(backup)
 	}
 }

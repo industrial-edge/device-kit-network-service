@@ -12,7 +12,14 @@ package siemens.iedge.dmapi.network.v1;
 // Contains MAC address, used for retrieving specified Network Interface settings.
 message NetworkInterfaceRequest  {
     string mac = 1;
+    
 }
+// Returns an Network Interface with 
+message NetworkInterfaceRequestWithLabel {
+    string label =1;
+}
+
+
 
 
 // Interface type holds settings for a Network Interface.
@@ -45,7 +52,8 @@ message Interface {
         map<string,string> AuxiliaryAddresses =5;  //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5 
     }
    L2 L2Conf = 6;
-   string InterfaceName = 7;  // ens2p - read only.
+   string InterfaceName = 7;  // ens2p 
+   string Label =8 ; // x1
 }
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.
@@ -62,8 +70,11 @@ service NetworkService {
     //Returns the settings of all ethernet typed network interfaces
     rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
    
-    //Returns the current setting with given MAC address.
+    //Returns the current setting for the interface, with given MAC address.
     rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
+
+    //Returns the current setting for the interface,  with given Label.
+    rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
        
     //Applies given configurations to Network Interfaces.
     rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);

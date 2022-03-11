@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,9 +15,6 @@ import (
 )
 
 var mutex sync.Mutex
-
-//for testing on real device please enter your ethernet typed interface's MAC address.
-const yourMac = "00:0C:29:C2:51:81"
 
 func Test_Conversions(t *testing.T) {
 
@@ -37,6 +35,15 @@ func Test_Conversions(t *testing.T) {
 	}
 
 }
+
+//for testing on real device please enter your ethernet typed interface's MAC address.
+const yourMac = "00:0C:29:C2:51:81"
+
+// for testing on real device please enter a label (e.g "X1" "testLabel")
+const yourNetworkDeviceLabelName = "TestLabel"
+
+// for testing on real device please enter your ethernet typed interface's Interface name. (e.g "enp0s3" "ens5")
+const yourNetworkDeviceInterfaceName = "ens6"
 
 func Test_GetAllInterfaces(t *testing.T) {
 	ParseNetMask(24)
@@ -97,6 +104,7 @@ func Test_ApplyNewNetworkSettingsManualWithWrongIP(t *testing.T) {
 func Test_ApplyNewNetworkSettingsManualNilDns(t *testing.T) {
 
 	mutex.Lock()
+
 	testData := &v1.Interface{
 		GatewayInterface: true,
 		MacAddress:       yourMac,
@@ -111,9 +119,10 @@ func Test_ApplyNewNetworkSettingsManualNilDns(t *testing.T) {
 			NetMask:             "255.255.255.0",
 			Range:               "8",
 			Gateway:             "192.168.1.27",
-			AuxiliaryAddresses: map[string]string{ "aux1" : "192.168.1.28"},
+			AuxiliaryAddresses:  map[string]string{"aux1": "192.168.1.28"},
 		},
 		InterfaceName: "enp2s0",
+		Label:         "enp0s8",
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
@@ -237,7 +246,7 @@ func Test_ApplyNewNetworkSettingsManual(t *testing.T) {
 		t.Fail()
 	}
 
-	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()){
+	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()) {
 		t.Logf("Expected DNS etry: %s, got: %s", testData.GetDNSConfig(), newOne.GetDNSConfig())
 		t.Fail()
 	}
@@ -251,7 +260,7 @@ func Test_ApplyNewNetworkSettingsManual(t *testing.T) {
 	}
 }
 
-func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
+func Test_ApplyNewNetworkSettingsAutoOnlyMac(t *testing.T) {
 	mutex.Lock()
 
 	testData := &v1.Interface{
@@ -263,8 +272,8 @@ func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
 	}
 	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
 
-	gonm, _ := gonetworkmanager.NewNetworkManager()
-	sut := NewNetworkConfiguratorWithNM(gonm)
+	goNm, _ := gonetworkmanager.NewNetworkManager()
+	sut := NewNetworkConfiguratorWithNM(goNm)
 
 	err := sut.Apply(newSettings)
 	time.Sleep(5 * time.Second)
@@ -277,18 +286,133 @@ func Test_ApplyNewNetworkSettingsAuto(t *testing.T) {
 	log.Println(newOne)
 
 	if !cmp.Equal(newOne.MacAddress, testData.MacAddress) {
-		t.Logf("Expected Mac: %s , got: %s",testData.MacAddress, newOne.MacAddress)
+		t.Logf("Expected Mac: %s , got: %s", testData.MacAddress, newOne.MacAddress)
 		t.Fail()
 	}
 
-	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()){
+	if !proto.Equal(newOne.GetDNSConfig(), testData.GetDNSConfig()) {
 		t.Logf("Expected DNS etry: %s, got: %s", testData.GetDNSConfig(), newOne.GetDNSConfig())
 		t.Fail()
 	}
 
 	if !cmp.Equal(newOne.DHCP, testData.DHCP) {
-		t.Logf("expected DHCP: %s , got:  %s",testData.DHCP, newOne.DHCP)
+		t.Logf("expected DHCP: %s , got:  %s", testData.DHCP, newOne.DHCP)
 		t.Fail()
 	}
 
+}
+
+func Test_ApplyNewNetworkSettingsAutoWithLabel(t *testing.T) {
+	mutex.Lock()
+
+	testData := &v1.Interface{
+		GatewayInterface: true,
+		DHCP:             "enabled",
+		Static:           &v1.Interface_StaticConf{},
+		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
+		Label:            yourNetworkDeviceLabelName,
+		InterfaceName:    "",
+	}
+	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
+
+	// Prepare label to interface map file.
+	labelMap := make(map[string]string)
+	labelMap[yourNetworkDeviceLabelName] = yourNetworkDeviceInterfaceName
+	WriteMapToFile(labelMap, LabelMapFileName)
+
+	gonm, _ := gonetworkmanager.NewNetworkManager()
+	sut := NewNetworkConfiguratorWithNM(gonm)
+
+	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
+	defer mutex.Unlock()
+	if err != nil {
+		t.Fail()
+	}
+	newOne := sut.GetInterfaceWithLabel(testData.Label)
+	log.Println("Read new configuration from system :")
+	log.Println(newOne)
+
+	if !cmp.Equal(strings.ToUpper(newOne.InterfaceName), strings.ToUpper(yourNetworkDeviceInterfaceName)) {
+		t.Logf("Expected Label: %s , got: %s", yourNetworkDeviceInterfaceName, newOne.InterfaceName)
+		t.Fail()
+	}
+
+	if !cmp.Equal(newOne.DHCP, testData.DHCP) {
+		t.Logf("Expected Label: %s , got: %s", testData.DHCP, newOne.DHCP)
+		t.Fail()
+	}
+
+}
+
+func Test_ApplyNetworkSettingsWithLabel(t *testing.T) {
+	mutex.Lock()
+
+	goNm, _ := gonetworkmanager.NewNetworkManager()
+	sut := NewNetworkConfiguratorWithNM(goNm)
+
+	//testData := sut.GetInterfaceWithLabel("enp0s8")
+	testData := &v1.Interface{
+		GatewayInterface: true,
+		DHCP:             "enabled",
+		Static:           &v1.Interface_StaticConf{},
+		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
+		Label:            yourNetworkDeviceLabelName,
+		InterfaceName:    yourNetworkDeviceInterfaceName,
+	}
+
+	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
+
+	// Prepare label to interface map file.
+	labelMap := make(map[string]string)
+	labelMap[yourNetworkDeviceLabelName] = yourNetworkDeviceInterfaceName
+	WriteMapToFile(labelMap, LabelMapFileName)
+
+	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
+	defer mutex.Unlock()
+	if err != nil {
+		t.Fail()
+	}
+	newOne := sut.GetInterfaceWithLabel(testData.Label)
+	log.Println("Read new configuration from system :")
+	log.Println("GetInterfaceWithLabel RPC result : ", newOne)
+
+	if !cmp.Equal(newOne.Label, strings.ToUpper(testData.Label)) {
+		t.Logf("Expected Label: %s , got: %s", testData.Label, newOne.Label)
+		t.Fail()
+	}
+
+	if !cmp.Equal(strings.ToUpper(newOne.InterfaceName), strings.ToUpper(testData.InterfaceName)) {
+		t.Logf("Expected Label: %s , got: %s", testData.InterfaceName, newOne.InterfaceName)
+		t.Fail()
+	}
+
+	if !cmp.Equal(newOne.DHCP, testData.DHCP) {
+		t.Logf("Expected Label: %s , got: %s", testData.DHCP, newOne.DHCP)
+		t.Fail()
+	}
+
+}
+
+func Test_ApplyNewNetworkSettingsAutoWithoutMacAndInterfaceName(t *testing.T) {
+	mutex.Lock()
+
+	testData := &v1.Interface{
+		GatewayInterface: true,
+		DHCP:             "enabled",
+		Static:           &v1.Interface_StaticConf{},
+		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "4.4.4.4"},
+	}
+	newSettings := &v1.NetworkSettings{Interfaces: []*v1.Interface{testData}}
+
+	goNm, _ := gonetworkmanager.NewNetworkManager()
+	sut := NewNetworkConfiguratorWithNM(goNm)
+
+	err := sut.Apply(newSettings)
+	time.Sleep(5 * time.Second)
+	defer mutex.Unlock()
+	if err == nil {
+		t.Fail()
+	}
 }
