@@ -48,8 +48,10 @@ nfpms:
   dependencies:
     - network-manager
     
-  files:
-    "dm-network.service": "/lib/systemd/system/dm-network.service"
+
+  contents:
+    - src: "dm-network.service"
+      dst: "/lib/systemd/system/dm-network.service"
 
 
   # Override default /usr/local/bin destination for binaries

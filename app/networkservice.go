@@ -145,7 +145,15 @@ func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.Netwo
 	} else {
 		//APPLY THE NEW SETTINGS
 		n.Lock()
-		err := n.configurator.Apply(newSettings)
+
+		if (nil != newSettings.LabelMap) && (0 != len(newSettings.LabelMap)) {
+			err = networking.WriteMapToFile(newSettings.LabelMap, networking.LabelMapFileName)
+		}
+
+		if err == nil {
+			err = n.configurator.Apply(newSettings)
+		}
+
 		defer n.Unlock()
 		if err != nil {
 			result = status.New(codes.Internal,
@@ -155,4 +163,20 @@ func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.Netwo
 
 	return &empty.Empty{}, result
 
+}
+
+func (n *networkServer) GetInterfaceWithLabel(ctx context.Context, request *v1.NetworkInterfaceRequestWithLabel) (*v1.Interface, error) {
+
+	log.Println("GetInterfaceWithLabel() called")
+	n.Lock()
+	state := status.New(codes.OK, "GetInterfaceWithLabel Done!").Err()
+	retVal := n.configurator.GetInterfaceWithLabel(request.Label)
+	if retVal == nil {
+		state = status.New(codes.NotFound, "Interface does not exist on this device!").Err()
+	}
+
+	n.Unlock()
+	log.Println("GetInterfaceWithLabel() done")
+
+	return retVal, state
 }

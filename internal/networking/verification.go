@@ -29,7 +29,10 @@ func verify(newSettings *v1.NetworkSettings, configurator *NetworkConfigurator) 
 
 	for _, element := range newSettings.Interfaces {
 
-		verifyMAC(element, resultOut, configurator)
+		if element.Label == "" {
+			verifyMAC(element, resultOut, configurator)
+		}
+
 
 		if element.Static != nil {
 			verifyStaticConf(element, resultOut)

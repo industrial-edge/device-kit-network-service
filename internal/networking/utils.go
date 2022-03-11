@@ -8,10 +8,12 @@ package networking
 
 import (
 	"container/list"
+	"encoding/json"
 	"fmt"
 	nm "github.com/Wifx/gonetworkmanager"
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
+	"io/ioutil"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
@@ -25,19 +27,20 @@ type dict map[string]interface{}
 // DBusDict Dictionary type
 type DBusDict map[string]dbus.Variant
 
-
 // Backup configuration can not applied to dbus! some fields needs to be removed Create a new connection
 //INSTANCE based on ipv4 and name from backup
 func retrieveSettingsFromBackup(backup nm.ConnectionSettings) nm.ConnectionSettings {
 	connection := make(nm.ConnectionSettings)
 	connection[ConnectionKey] = make(dict)
 	connection[IPV4Key] = make(dict)
+	connection[EthernetType] = make(dict)
 	connection[ConnectionKey][IDKey] = backup[ConnectionKey][IDKey]
 	connection[ConnectionKey][TypeKey] = backup[ConnectionKey][TypeKey]
 	connection[ConnectionKey][InterfaceNameKey] = backup[ConnectionKey][InterfaceNameKey]
 	connection[ConnectionKey][UUIDKey] = uuid.New().String()
 	connection[ConnectionKey][TimeStampKey] = time.Now().UnixNano()
 	connection[EthernetType] = backup[EthernetType]
+	connection[EthernetType][MACAddressKey] = backup[EthernetType][MACAddressKey]
 	connection[IPV4Key] = backup[IPV4Key]
 	return connection
 }
@@ -68,7 +71,7 @@ func parseDHCPIPv4Config(ipv4conf nm.IP4Config) *v1.Interface_StaticConf {
 	config := &v1.Interface_StaticConf{}
 
 	if ipv4conf != nil {
-		ipv4Address , _ := ipv4conf.GetPropertyAddressData()
+		ipv4Address, _ := ipv4conf.GetPropertyAddressData()
 		if len(ipv4Address) > 0 {
 			config.IPv4 = ipv4Address[0].Address
 			config.NetMask = ParseNetMask(uint32(ipv4Address[0].Prefix))
@@ -82,7 +85,7 @@ func parseDns(dnsArray []nm.IP4NameserverData) *v1.Interface_Dns {
 	dns := &v1.Interface_Dns{}
 	tmpDnsList := list.New()
 
-    // copy nonempty members of dnsArray to tmpDnsArray list
+	// copy nonempty members of dnsArray to tmpDnsArray list
 	for _, dnsEntry := range dnsArray {
 		if len(dnsEntry.Address) != 0 {
 			tmpDnsList.PushBack(dnsEntry.Address)
@@ -126,6 +129,7 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 	if device == nil {
 		return nil
 	}
+
 	//gnm,_:=nm.NewNetworkManager()
 	var values nm.ConnectionSettings
 	var retVal *v1.Interface
@@ -133,7 +137,9 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 
 	conn, err := device.GetPropertyActiveConnection()
 	allConnections = listConnections(device)
+
 	mac, _ := device.GetPropertyHwAddress()
+	deviceName, _ := device.GetPropertyInterface()
 
 	if err == nil && conn != nil {
 		IPv4Wrapper, _ := conn.GetPropertyIP4Config()
@@ -145,10 +151,11 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 		retVal = convertToProto(values, nil, mac)
 	} else {
 		retVal = &v1.Interface{MacAddress: mac}
+		retVal = &v1.Interface{Label: deviceName}
 	}
 
 	// get device interface name
-	interfaceName , _:= device.GetPropertyInterface()
+	interfaceName, _ := device.GetPropertyInterface()
 	log.Println("interfacename :", interfaceName)
 
 	// get layer2 config from device
@@ -156,12 +163,13 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 	retVal.L2Conf = l2device
 
 	retVal.InterfaceName = interfaceName
+	retVal.Label = getLabelForInterface(interfaceName)
 
 	return retVal
 }
 
 // Converts DBus data (nm.ConnectionSettings) to Device Model Proto
-func convertToProto(connection nm.ConnectionSettings, ipv4Config  nm.IP4Config, mac string) *v1.Interface {
+func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, mac string) *v1.Interface {
 
 	retVal := &v1.Interface{}
 	retVal.MacAddress = strings.ToUpper(mac)
@@ -174,7 +182,7 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config  nm.IP4Config, 
 		retVal.DHCP = Disabled
 	}
 
-	if val, ok :=  connection[IPV4Key]; ok {
+	if val, ok := connection[IPV4Key]; ok {
 		if v, o := val[RouteMetricKey]; o {
 			if v != nil && v.(int64) == 1 {
 				retVal.GatewayInterface = true
@@ -190,7 +198,7 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config  nm.IP4Config, 
 		dnsArray, _ := ipv4Config.GetPropertyNameserverData()
 		retVal.DNSConfig = parseDns(dnsArray)
 	}
-	
+
 	return retVal
 }
 
@@ -236,13 +244,20 @@ func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.Connect
 			}
 		}
 
-		if protoData.DHCP == Enabled{
+		if protoData.DHCP == Enabled {
 			// If connection already has DNS config which gathered from DHCP, ignore it.
 			connection[IPV4Key][DNSIgnoreAutoKey] = Yes
 		}
 	}
 
-	connection[ConnectionKey][IDKey] = fmt.Sprintf("%s_%s_%s", deviceName, protoData.MacAddress, connectionSuffix)
+	identifier := ""
+	if protoData.Label != "" {
+		identifier = protoData.Label
+	} else if protoData.MacAddress != "" {
+		identifier = protoData.MacAddress
+	}
+
+	connection[ConnectionKey][IDKey] = fmt.Sprintf("%s_%s", identifier, connectionSuffix)
 	connection[ConnectionKey][UUIDKey] = uuid.New().String()
 	connection[ConnectionKey][TimeStampKey] = time.Now().Unix()
 
@@ -252,4 +267,66 @@ func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.Connect
 	connection[EthernetType][MACAddressKey] = uintMac
 
 	return connection
+}
+
+func GetMapWithUppercase(inputMap map[string]string) map[string]string {
+	outputMap := make(map[string]string)
+	for key, value := range inputMap {
+		outputMap[strings.ToUpper(key)] = strings.ToUpper(value)
+	}
+
+	return outputMap
+}
+
+func WriteMapToFile(mapToBeWritten map[string]string, fileName string) error {
+	buffer, err := json.Marshal(GetMapWithUppercase(mapToBeWritten))
+
+	if err == nil {
+		err = ioutil.WriteFile(fileName, buffer, 0666)
+	}
+
+	return err
+}
+
+func readMapFromFile(fileName string) (map[string]string, error) {
+
+	var parsedMap map[string]string
+	buffer, err := ioutil.ReadFile(fileName)
+
+	if err == nil {
+		err = json.Unmarshal(buffer, &parsedMap)
+	}
+
+	return parsedMap, err
+}
+
+func getInterfaceForLabel(label string) string {
+	var interfaceName string
+	labelMap, err := readMapFromFile(LabelMapFileName)
+
+	if err == nil {
+		interfaceName = labelMap[strings.ToUpper(label)]
+	} else {
+		log.Println(err)
+	}
+
+	return interfaceName
+}
+
+func getLabelForInterface(interfaceName string) string {
+	labelMap, err := readMapFromFile(LabelMapFileName)
+
+	if err == nil {
+		for label, value := range labelMap {
+			if value == strings.ToUpper(interfaceName) {
+				return label
+			}
+		}
+
+		log.Printf("There is no label for interface %s.", interfaceName)
+	} else {
+		log.Println(err)
+	}
+
+	return ""
 }
