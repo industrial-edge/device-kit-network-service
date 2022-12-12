@@ -43,7 +43,7 @@ const yourMac = "00:0C:29:C2:51:81"
 const yourNetworkDeviceLabelName = "TestLabel"
 
 // for testing on real device please enter your ethernet typed interface's Interface name. (e.g "enp0s3" "ens5")
-const yourNetworkDeviceInterfaceName = "ens6"
+const yourNetworkDeviceInterfaceName = "eth1"
 
 func Test_GetAllInterfaces(t *testing.T) {
 	ParseNetMask(24)

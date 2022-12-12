@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Siemens AG
+ * Copyright (c) 2022 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -10,16 +10,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking"
 	"os"
 	"sync"
+	"time"
 )
 
 // IEDKService typical IEDK service should implement this.
@@ -36,6 +37,7 @@ func CreateServiceApp() *MainApp {
 }
 
 type networkServer struct {
+	v1.UnimplementedNetworkServiceServer
 	configurator *networking.NetworkConfigurator
 	sync.Mutex
 }
@@ -101,8 +103,8 @@ func (app *MainApp) StartApp() {
 	// No need for additional start up .
 }
 
-// Returns all ETHERNET Typed network interface settings.
-func (n *networkServer) GetAllInterfaces(ctx context.Context, e *empty.Empty) (*v1.NetworkSettings, error) {
+// GetAllInterfaces Returns all ETHERNET Typed network interface settings.
+func (n *networkServer) GetAllInterfaces(ctx context.Context, e *emptypb.Empty) (*v1.NetworkSettings, error) {
 
 	log.Println("GetAllInterfaces() called")
 	n.Lock()
@@ -134,7 +136,7 @@ func (n *networkServer) GetInterfaceWithMac(ctx context.Context,
 }
 
 // ApplySettings applies given network configurations via NetworkManager
-func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.NetworkSettings) (*empty.Empty, error) {
+func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.NetworkSettings) (*emptypb.Empty, error) {
 	result := status.New(codes.OK, "Apply Settings Done!").Err()
 
 	_, err := n.configurator.ArePreconditionsOk(newSettings)
@@ -159,9 +161,11 @@ func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.Netwo
 			result = status.New(codes.Internal,
 				fmt.Sprintf("Errors occured while applying new settings,  %v", err)).Err()
 		}
+		// After the device's network configurations are set, a 5 second sleep is set because it takes time to apply to the device.
+		time.Sleep(5 * time.Second)
 	}
 
-	return &empty.Empty{}, result
+	return &emptypb.Empty{}, result
 
 }
 

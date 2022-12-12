@@ -221,7 +221,7 @@ func (nc *NetworkConfigurator) addConnection(mac string, settings nm.ConnectionS
 	conn, err := settingsM.AddConnection(settings)
 	if err == nil {
 		log.Printf("settings applied for device %v successfully", mac)
-		_, aErr := nc.gnm.ActivateConnection(conn, device)
+		_, aErr := nc.gnm.ActivateConnection(conn, device, nil)
 		if aErr != nil {
 			log.Println("configuration applied,but could not activated since: ", aErr)
 		}
