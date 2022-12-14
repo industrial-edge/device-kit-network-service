@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Siemens AG
+ * Copyright (c) 2022 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -58,7 +58,8 @@ message Interface {
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.
 message NetworkSettings {
-    repeated Interface Interfaces = 1; // Network settings contains an array of Interfaces.Applying new settings or receiving current settings is supported for multiple ethernet typed network interfaces supported.On
+    repeated Interface Interfaces = 1; // Network settings contains an array of Interfaces.Applying new settings or receiving current settings is supported for multiple ethernet typed network interfaces supported.
+    map<string, string> LabelMap = 2; // LabelMap contains port label and corresponding interface-name. e.g key : x1 value: enp2s0
 }
 
 

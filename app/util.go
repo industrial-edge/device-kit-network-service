@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Siemens AG
+ * Copyright (c) 2022 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -14,7 +14,7 @@ import (
 	"strconv"
 )
 
-//private unix domain socket chowner
+// chownSocket private unix domain socket chowner
 func chownSocket(address string, userName string, groupName string) error {
 	us, err1 := user.Lookup(userName)
 	group, err2 := user.LookupGroup(groupName)

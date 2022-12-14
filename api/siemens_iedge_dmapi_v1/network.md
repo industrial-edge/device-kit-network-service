@@ -10,7 +10,9 @@
     - [Interface.L2.AuxiliaryAddressesEntry](#siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry)
     - [Interface.StaticConf](#siemens.iedge.dmapi.network.v1.Interface.StaticConf)
     - [NetworkInterfaceRequest](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest)
+    - [NetworkInterfaceRequestWithLabel](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel)
     - [NetworkSettings](#siemens.iedge.dmapi.network.v1.NetworkSettings)
+    - [NetworkSettings.LabelMapEntry](#siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry)
   
     - [NetworkService](#siemens.iedge.dmapi.network.v1.NetworkService)
   
@@ -39,7 +41,8 @@ Interface type holds settings for a Network Interface.
 | Static | [Interface.StaticConf](#siemens.iedge.dmapi.network.v1.Interface.StaticConf) |  | Static field is StaticConf type instance. |
 | DNSConfig | [Interface.Dns](#siemens.iedge.dmapi.network.v1.Interface.Dns) |  | DNSConfig is dns type instance. |
 | L2Conf | [Interface.L2](#siemens.iedge.dmapi.network.v1.Interface.L2) |  |  |
-| InterfaceName | [string](#string) |  | ens2p - read only. |
+| InterfaceName | [string](#string) |  | ens2p |
+| Label | [string](#string) |  | x1 |
 
 
 
@@ -129,6 +132,21 @@ Contains MAC address, used for retrieving specified Network Interface settings.
 
 
 
+<a name="siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel"></a>
+
+### NetworkInterfaceRequestWithLabel
+Returns an Network Interface with
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| label | [string](#string) |  |  |
+
+
+
+
+
+
 <a name="siemens.iedge.dmapi.network.v1.NetworkSettings"></a>
 
 ### NetworkSettings
@@ -137,7 +155,24 @@ Contains multiple network interface settings. It can be used to apply or get the
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| Interfaces | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | repeated | Network settings contains an array of Interfaces.Applying new settings or receiving current settings is supported for multiple ethernet typed network interfaces supported.On |
+| Interfaces | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | repeated | Network settings contains an array of Interfaces.Applying new settings or receiving current settings is supported for multiple ethernet typed network interfaces supported. |
+| LabelMap | [NetworkSettings.LabelMapEntry](#siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry) | repeated | LabelMap contains port label and corresponding interface-name. e.g key : x1 value: enp2s0 |
+
+
+
+
+
+
+<a name="siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry"></a>
+
+### NetworkSettings.LabelMapEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [string](#string) |  |  |
 
 
 
@@ -160,7 +195,8 @@ GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-ap
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | GetAllInterfaces | [.google.protobuf.Empty](#google.protobuf.Empty) | [NetworkSettings](#siemens.iedge.dmapi.network.v1.NetworkSettings) | Returns the settings of all ethernet typed network interfaces |
-| GetInterfaceWithMac | [NetworkInterfaceRequest](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest) | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | Returns the current setting with given MAC address. |
+| GetInterfaceWithMac | [NetworkInterfaceRequest](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest) | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | Returns the current setting for the interface, with given MAC address. |
+| GetInterfaceWithLabel | [NetworkInterfaceRequestWithLabel](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel) | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | Returns the current setting for the interface, with given Label. |
 | ApplySettings | [NetworkSettings](#siemens.iedge.dmapi.network.v1.NetworkSettings) | [.google.protobuf.Empty](#google.protobuf.Empty) | Applies given configurations to Network Interfaces. |
 
  <!-- end services -->
