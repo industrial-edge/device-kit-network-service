@@ -1,0 +1,106 @@
+/*
+ * Copyright (c) 2023 Siemens AG
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
+import "Network.proto";
+
+option go_package = ".;siemens_iedge_dmapi_v1";
+package siemens.iedge.dmapi.onboard.v1 ;
+
+// Onboarding section in IEM Onboarding JSON file.
+message Onboarding  {
+    string  localUserName =1;
+    string  localPassword =2;
+    string  deviceName =3;
+    string  deviceId =4;
+    string  platformActualName =5;
+    string  softwarePlatformName =6;
+    string  potalUrl =7;
+    string  nodeId =8;
+    string  userId =9;
+    string  deviceType =10;
+    string  swPlatformId =11;
+    string  platformId =12;
+    bool  isActivationConfirmed =13;
+    string  deviceRole =14;
+}
+
+
+// Security section in IEM Onboarding JSON file.
+message Device{
+    siemens.iedge.dmapi.network.v1.NetworkSettings Network=1;
+    repeated string ntpServer=2;
+    string dockerIP=3;
+    google.protobuf.Any customConfiguration=4; //device builder specific custom configuraiton.
+}
+
+// Security section in IEM Onboarding JSON file.
+message Security {
+
+    string baseUrl =1;
+    repeated string clientCredentialProfile =2;
+    string ca_chain=3;
+}
+
+// Agent section in IEM Onboarding JSON file.
+message Agent {
+
+    string name=1;
+    repeated string proxy=2;
+    string agentId=3;
+    Security security=4;
+}
+
+message ProxySettings {
+    string proxyId = 1;
+    string proxyType = 2;
+    string host = 3;
+    string protocol = 4;
+    string authenticationType = 5;
+    string user = 6;
+    string password = 7;
+    string noProxy = 8;
+    repeated int32 customPorts = 9;
+}
+
+
+// Corresponding proto message for JSON file that had downloaded from IEM. Onboarding JSON file needs to be converted to this type first.
+// Compatible with IEM Onboarding JSON schema, since all field names are same.
+// For more information please refer to IEM Onboarding JSON scheme.
+message DeviceConfiguration{
+
+    Device Device=1;  // Device seciton in IEM Onboarding JSON file.
+    Onboarding onboarding=2; // Onboarding section in IEM Onboarding JSON file.
+    repeated Agent agents=3; // Agent section in IEM Onboarding JSON file.
+    repeated ProxySettings  proxies=4; //Proxy section in IEM Onboarding JSON file.
+}
+
+// Type indicates the Onboarding Status.
+message OnboardingStatus{
+    bool isOnboarded =1; // true if onboarding is successful,otherwise false.
+    string message=2;   // Additonal information for onboarding status.
+}
+
+// Onboard service ,uses a UNIX Domain Socket "/var/run/devicemodel/onboard.sock" for GRPC communication.
+// protoc  generates both client and server instance for this Service.
+// GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
+service OnboardService {
+
+    // Starts onboarding sequence,applies  all settings via ApplyConfiguration() and finally calls  EdgeCoreRuntime REST API to onboard the device.
+    rpc OnboardWithUSB(DeviceConfiguration) returns(google.protobuf.Empty);
+
+    // Applies all settings. Does not call EdgeCoreRuntime REST API.Applicable for UI Onboarding.
+    rpc ApplyConfiguration(DeviceConfiguration) returns(google.protobuf.Empty);
+
+    // Sets state for device onboard status.In Onboarding from UI, EdgeCoreRuntime calls this method to set the onboarding status.
+    rpc SetOnboardingStatus(OnboardingStatus) returns(google.protobuf.Empty);
+
+    // Server stream for onboarding status changes.
+    rpc  ListenOnboardState(google.protobuf.Empty) returns(stream OnboardingStatus);
+
+}

@@ -1,3 +1,3 @@
 #!/bin/bash
 
-systemctl stop dm-network.service
+systemctl stop dm-onboard.service

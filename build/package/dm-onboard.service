@@ -1,0 +1,18 @@
+[Unit]
+Description=Device Model Onboard Service
+After=dm-system.service
+
+[Service]
+ExecStartPre=mkdir -p /var/run/devicemodel
+ExecStart=/usr/bin/onboardservice unix /var/run/devicemodel/onboard.sock
+ExecReload=/bin/kill -9 $MAINPID
+Type=simple
+KillMode = process
+TimeoutStartSec=0
+TimeoutSec=0
+RestartSec=5s
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Siemens AG
+ * Copyright (c) 2023 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */

@@ -1,9 +1,8 @@
-project_name: dm-network
+project_name: dm-onboard
 dist: dist
 env:
   - GO111MODULE=on
 
-# Build customization
 snapshot:
   # Allows you to change the name of the generated snapshot
   #
@@ -13,9 +12,11 @@ snapshot:
   # Default is `{{ .Tag }}-SNAPSHOT-{{.ShortCommit}}`.
   name_template: "{{ .Env.TAG }}"
 
+# Build customization
+
 builds:
-  - main: ../../cmd/networkservice
-    binary: networkservice
+  - main: ../../cmd/onboardservice
+    binary: onboardservice
     env:
       - CGO_ENABLED=0
     goos:
@@ -26,7 +27,7 @@ builds:
       - arm
     goarm:
       - 7
-    ldflags: -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.buildTime={{.Date}}`.
+    ldflags: -s -w -X main.version={{.Env.TAG}} -X main.commit={{.Commit}} -X main.buildTime={{.Date}}`.
 
 nfpms:
 - 
@@ -35,24 +36,18 @@ nfpms:
   #file_name_template: "{{ .ProjectName }}_{{ .Env.TAG }}_{{ .Os }}_{{ .Arch }}"
 
   vendor: Siemens AG
-  homepage: https://github.com/industrial-edge/device-kit-network-service
-  maintainer: https://github.com/industrial-edge/device-kit-network-service
-  description: Network Service is gRPC & GO  based Network Configuration service
-  license: Copyright (c) 2022 Siemens AG
+  homepage: https://github.com/industrial-edge/device-kit-onboard-service
+  maintainer: https://github.com/industrial-edge/device-kit-onboard-service
+  description: OnboardService is gRPC based edge core activator
+  license: Copyright (c) 2023 Siemens AG
 
   # Packages to be generated.
   formats:
     - deb
 
-# Packages your package depends on.
-  dependencies:
-    - network-manager
-    
-
   contents:
-    - src: "dm-network.service"
-      dst: "/lib/systemd/system/dm-network.service"
-
+    - src: "dm-onboard.service"
+      dst: "/lib/systemd/system/dm-onboard.service"
 
   # Override default /usr/local/bin destination for binaries
   bindir: /usr/bin
