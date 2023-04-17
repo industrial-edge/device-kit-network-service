@@ -64,7 +64,7 @@ dep: ## Get the dependencies
 
 server: dep ## Build the binary file for server
 	$(info Building server...)
-	@go build -i -v -ldflags=$(LD_FLAGS) -o $(SERVER_OUT) $(SERVER_PKG_BUILD)
+	@go build -v -ldflags=$(LD_FLAGS) -o $(SERVER_OUT) $(SERVER_PKG_BUILD)
 	$(info Built server at $(SERVER_OUT) )
 
 clean: ## Remove previous builds
@@ -79,7 +79,7 @@ clean: ## Remove previous builds
 
 .PHONY: deb
 deb:	## Build Debian package (deb)
-	@goreleaser -f "${PROJECT_ROOT}/build/package/.goreleaser.yml"  --snapshot --skip-publish --rm-dist
+	@goreleaser -f "${PROJECT_ROOT}/build/package/.goreleaser.yml"  --snapshot --skip-publish --clean
 
 .PHONY: vagrant-up
 vagrant-up:	## Bring vagrant vm up and running
@@ -105,6 +105,7 @@ vagrant-testing: ## Run unit tests within a vagrant vm
 	$(info Makefile dir is "${CUR_DIR}")
 	$(info Running unit tests in vagrant box for "${PROJECT_NAME}")
 	@which vagrant 1>/dev/null || echo "vagrant command not found, install vagrant first!"
+	@vagrant ssh -c "cd networkservice/build/package && sudo -E -H go version"
 	@vagrant ssh -c "cd networkservice/build/package && sudo -E -H make dep"
 	@vagrant ssh -c "cd networkservice/build/package && sudo -E -H make test"
 	@vagrant ssh -c "cd networkservice/build/package && sudo -E -H make coverhtml"

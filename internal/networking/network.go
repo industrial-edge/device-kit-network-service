@@ -46,7 +46,7 @@ func NewNetworkConfigurator() *NetworkConfigurator {
 
 //### PUBLIC FUNCTIONS
 
-//GetInterfaceWithMac Returns All Ethernet typed interfaces on a device
+// GetInterfaceWithMac Returns All Ethernet typed interfaces on a device
 func (nc *NetworkConfigurator) GetInterfaceWithMac(mac string) *v1.Interface {
 	device := nc.getDeviceWithMac(mac)
 	if device == nil {
@@ -55,7 +55,7 @@ func (nc *NetworkConfigurator) GetInterfaceWithMac(mac string) *v1.Interface {
 	return DBusToProto(device)
 }
 
-//GetInterfaceWithLabel Returns All Ethernet typed interfaces on a device
+// GetInterfaceWithLabel Returns All Ethernet typed interfaces on a device
 func (nc *NetworkConfigurator) GetInterfaceWithLabel(Label string) *v1.Interface {
 	device := nc.getDeviceWithLabel(Label)
 	if device == nil {
@@ -64,7 +64,7 @@ func (nc *NetworkConfigurator) GetInterfaceWithLabel(Label string) *v1.Interface
 	return DBusToProto(device)
 }
 
-//GetEthernetInterfaces Returns All Ethernet typed interfaces on a device
+// GetEthernetInterfaces Returns All Ethernet typed interfaces on a device
 func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
 
 	devices := nc.getAllEthernetDevices()

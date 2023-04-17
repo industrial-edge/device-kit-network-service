@@ -28,7 +28,7 @@ type dict map[string]interface{}
 type DBusDict map[string]dbus.Variant
 
 // Backup configuration can not applied to dbus! some fields needs to be removed Create a new connection
-//INSTANCE based on ipv4 and name from backup
+// INSTANCE based on ipv4 and name from backup
 func retrieveSettingsFromBackup(backup nm.ConnectionSettings) nm.ConnectionSettings {
 	connection := make(nm.ConnectionSettings)
 	connection[ConnectionKey] = make(dict)
@@ -202,7 +202,7 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 	return retVal
 }
 
-//Creates new NetworkManager->ConnectionSettings from given device model proto data
+// Creates new NetworkManager->ConnectionSettings from given device model proto data
 func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.ConnectionSettings {
 	connection := make(nm.ConnectionSettings)
 	connection[ConnectionKey] = make(dict)

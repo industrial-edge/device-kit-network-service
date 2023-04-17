@@ -2,6 +2,7 @@ package networking
 
 import (
 	"fmt"
+	"github.com/Wifx/gonetworkmanager"
 	"log"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 )
@@ -36,7 +36,7 @@ func Test_Conversions(t *testing.T) {
 
 }
 
-//for testing on real device please enter your ethernet typed interface's MAC address.
+// for testing on real device please enter your ethernet typed interface's MAC address.
 const yourMac = "00:0C:29:C2:51:81"
 
 // for testing on real device please enter a label (e.g "X1" "testLabel")

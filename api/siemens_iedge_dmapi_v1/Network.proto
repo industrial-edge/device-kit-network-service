@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Siemens AG
+ * Copyright (c) 2023 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -8,11 +8,11 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 option go_package = ".;siemens_iedge_dmapi_v1";
 package siemens.iedge.dmapi.network.v1;
- 
+
 // Contains MAC address, used for retrieving specified Network Interface settings.
 message NetworkInterfaceRequest  {
     string mac = 1;
-    
+
 }
 // Returns an Network Interface with 
 message NetworkInterfaceRequestWithLabel {
@@ -51,9 +51,9 @@ message Interface {
         string Gateway =4; //e.g: 192.168.2.1
         map<string,string> AuxiliaryAddresses =5;  //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5 
     }
-   L2 L2Conf = 6;
-   string InterfaceName = 7;  // ens2p 
-   string Label =8 ; // x1
+    L2 L2Conf = 6;
+    string InterfaceName = 7;  // ens2p
+    string Label =8 ; // x1
 }
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.
@@ -67,16 +67,16 @@ message NetworkSettings {
 // protoc  generates both client and server instance for this Service.
 // GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
 service NetworkService {
-    
+
     //Returns the settings of all ethernet typed network interfaces
     rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
-   
+
     //Returns the current setting for the interface, with given MAC address.
     rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
 
     //Returns the current setting for the interface,  with given Label.
     rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
-       
+
     //Applies given configurations to Network Interfaces.
     rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
 

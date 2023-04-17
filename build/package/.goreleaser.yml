@@ -38,7 +38,7 @@ nfpms:
   homepage: https://github.com/industrial-edge/device-kit-network-service
   maintainer: https://github.com/industrial-edge/device-kit-network-service
   description: Network Service is gRPC & GO  based Network Configuration service
-  license: Copyright (c) 2022 Siemens AG
+  license: Copyright (c) 2023 Siemens AG
 
   # Packages to be generated.
   formats:
