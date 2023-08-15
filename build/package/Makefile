@@ -58,8 +58,8 @@ coverhtml: ## Generate global code coverage report in HTML
 
 dep: ## Get the dependencies
 	$(info Get the dependencies...)
-	@go get -v -d ./...
-	@go get -v -u golang.org/x/lint/golint
+	@go get -v -d $(PKG)/...
+	@go get -v golang.org/x/lint/golint
 	@go mod tidy
 
 server: dep ## Build the binary file for server
