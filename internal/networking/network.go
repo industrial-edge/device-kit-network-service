@@ -200,6 +200,22 @@ func (nc *NetworkConfigurator) tryApply(protoData *v1.Interface) (nm.ConnectionS
 	return backup, err
 }
 
+// setMACAddressInBackup ensures that the MAC address is set in the backup.
+// If the MAC address is not already present in the backup, it retrieves the permanent hardware address
+// from the wired device, parses it into a MAC address, and sets it in the backup.
+// This is necessary to correctly restore the connection settings if needed.
+func setMACAddressInBackup(backup nm.ConnectionSettings, wired nm.DeviceWired) {
+	if backup[EthernetType][MACAddressKey] == nil {
+		retValue, _ := wired.GetPropertyPermHwAddress()
+		macAddr, err := net.ParseMAC(retValue)
+		if err == nil {
+			backup[EthernetType][MACAddressKey] = []uint8(macAddr)
+		} else {
+			log.Println("Cannot create backup, parse mac address error: ", err)
+		}
+	}
+}
+
 func (nc *NetworkConfigurator) createBackupFromExisting(wired nm.DeviceWired) nm.ConnectionSettings {
 
 	list := listConnections(wired)
@@ -209,6 +225,7 @@ func (nc *NetworkConfigurator) createBackupFromExisting(wired nm.DeviceWired) nm
 		return nil
 	} else {
 		backup, _ := list[0].GetSettings()
+		setMACAddressInBackup(backup, wired)
 		log.Println("created backup for existing connection")
 		// new settings instance needed to be ready for applying backup
 		log.Println(backup)
