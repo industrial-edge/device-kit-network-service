@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023 Siemens AG
+// Copyright (c) Siemens 2023
 // Licensed under the MIT license
 // See LICENSE file in the top-level directory
 
