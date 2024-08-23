@@ -1,6 +1,7 @@
 **/__pycache__
 .idea/
 .vscode/*
+.cache/*
 report/*
 
 !report/.gitkeep

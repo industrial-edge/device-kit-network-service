@@ -9,6 +9,21 @@ Purpose of these repositories is to share reference implementation of IE Device 
 # IEDK Network Service
 _Network Service_ is a gRPC & Go based network configuration microservice. The network settings of the Edge Devices are configured through this service.
 
+```bash
+    //Returns the settings of all ethernet typed network interfaces
+    rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
+   
+    //Returns the current setting for the interface, with given MAC address.
+    rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
+
+    //Returns the current setting for the interface,  with given Label.
+    rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
+       
+    //Applies given configurations to Network Interfaces.
+    rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
+
+```
+
 ## Overview
 
 _Network Service_ is developed in the Go programming language and gRPC. More information can be found [here](https://grpc.io/docs/). The _Network Service_ runs as a systemd service within the device that has a debian-based operating system.
