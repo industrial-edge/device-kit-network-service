@@ -8,7 +8,7 @@ package networking
 
 import (
 	"errors"
-	nm "github.com/Wifx/gonetworkmanager"
+	nm "github.com/Wifx/gonetworkmanager/v2"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"

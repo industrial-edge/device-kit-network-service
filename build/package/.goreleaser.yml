@@ -46,8 +46,7 @@ nfpms:
 
 # Packages your package depends on.
   dependencies:
-    - network-manager
-    
+    - network-manager (>= 0.9.0)
 
   contents:
     - src: "dm-network.service"
