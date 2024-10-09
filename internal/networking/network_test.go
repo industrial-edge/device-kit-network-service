@@ -2,7 +2,7 @@ package networking
 
 import (
 	"fmt"
-	"github.com/Wifx/gonetworkmanager"
+	"github.com/Wifx/gonetworkmanager/v2"
 	"log"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"strings"

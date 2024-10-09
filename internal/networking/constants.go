@@ -7,7 +7,8 @@
 package networking
 
 // DBUS NetworkManager Key Names
-// DO NOT MODIFY
+// Please be considerate of the DBUS key values when you are changing the fields
+
 const (
 	// MACAddressKey
 	MACAddressKey = "mac-address"
@@ -29,6 +30,8 @@ const (
 	Manual = "manual"
 	// DHCP
 	DHCP = "dhcp"
+	// Static
+	Static = "static"
 	// MethodKey
 	MethodKey = "method"
 	// RouteMetricKey
