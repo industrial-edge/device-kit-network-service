@@ -10,7 +10,7 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
-	nm "github.com/Wifx/gonetworkmanager"
+	nm "github.com/Wifx/gonetworkmanager/v2"
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
 	"io/ioutil"
@@ -46,16 +46,16 @@ func retrieveSettingsFromBackup(backup nm.ConnectionSettings) nm.ConnectionSetti
 }
 
 func parseStaticIPConfig(connection nm.ConnectionSettings) *v1.Interface_StaticConf {
-	dict := connection[IPV4Key][AddressDataKey].([]map[string]dbus.Variant)
+	dict := connection[IPV4Key][AddressDataKey].([]map[string]interface{})
 
 	config := &v1.Interface_StaticConf{}
 	if len(dict) > 0 {
-		if dict[0][AddressKey].Value() != nil {
-			config.IPv4 = dict[0][AddressKey].Value().(string)
+		if dict[0][AddressKey] != nil {
+			config.IPv4 = dict[0][AddressKey].(string)
 		}
 
-		if dict[0][PrefixKey].Value() != nil {
-			config.NetMask = ParseNetMask(dict[0][PrefixKey].Value().(uint32))
+		if dict[0][PrefixKey] != nil {
+			config.NetMask = ParseNetMask(dict[0][PrefixKey].(uint32))
 		}
 		if connection[IPV4Key][GatewayKey] != nil {
 			config.Gateway = connection[IPV4Key][GatewayKey].(string)
@@ -202,36 +202,74 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 	return retVal
 }
 
-// Creates new NetworkManager->ConnectionSettings from given device model proto data
+// newSettingsFromProto creates new NetworkManager->ConnectionSettings from given device model proto data.
+// It takes a v1.Interface and a deviceName as parameters and returns a nm.ConnectionSettings.
 func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.ConnectionSettings {
-	connection := make(nm.ConnectionSettings)
-	connection[ConnectionKey] = make(dict)
-	connection[IPV4Key] = make(dict)
-	connection[EthernetType] = make(dict)
-	var connectionSuffix string
+	connection := initializeConnectionSettings()
+	ipAssignmentMethod := determineIpAssignmentMethod(protoData)
+	applyConnectionSetting(ipAssignmentMethod, protoData, connection)
+	identifier := determineIdentifier(protoData)
+	setConnectionDetails(connection, protoData, identifier, ipAssignmentMethod, deviceName)
 
+	return connection
+}
+
+// determineIpAssignmentMethod determines the connection suffix based on the protoData.
+func determineIpAssignmentMethod(protoData *v1.Interface) string {
+	if protoData.DHCP == Enabled {
+		return DHCP
+	}
+	return Static
+}
+
+// applyConnectionSetting applies the connection settings.
+func applyConnectionSetting(connectionSuffix string, protoData *v1.Interface, connection nm.ConnectionSettings) {
 	if protoData.GatewayInterface {
 		connection[IPV4Key][RouteMetricKey] = 1
 	}
-	if protoData.DHCP == Enabled {
-		connection[IPV4Key][MethodKey] = Auto
-		connectionSuffix = DHCP
+	if connectionSuffix == DHCP {
+		putDHCP(connection)
 	} else {
-		connection[IPV4Key][MethodKey] = Manual
-		connection[IPV4Key][GatewayKey] = protoData.Static.Gateway
+		putStaticIP(protoData, connection)
+	}
 
-		//DBus variant type is needed to set manual IP via DBus
+	putDNSConfig(protoData, connection)
+}
+
+// initializeConnectionSettings initializes the connection settings.
+func initializeConnectionSettings() nm.ConnectionSettings {
+	return nm.ConnectionSettings{
+		ConnectionKey: make(dict),
+		IPV4Key:       make(dict),
+		EthernetType:  make(dict),
+	}
+}
+
+// putDHCP puts the DHCP configuration.
+func putDHCP(connection nm.ConnectionSettings) {
+	connection[IPV4Key][MethodKey] = Auto
+}
+
+// putStaticIP puts the static IP configuration.
+func putStaticIP(protoData *v1.Interface, connection nm.ConnectionSettings) {
+	connection[IPV4Key][MethodKey] = Manual
+	if protoData.Static != nil {
+		if protoData.Static.Gateway != "" {
+			connection[IPV4Key][GatewayKey] = protoData.Static.Gateway
+		}
 		address := dbus.MakeVariantWithSignature(protoData.Static.IPv4, dbus.ParseSignatureMust("s"))
 		prefix := dbus.MakeVariantWithSignature(ParseNetMaskSize(protoData.Static.NetMask), dbus.ParseSignatureMust("u"))
 
 		ipDict := make(DBusDict)
-		ipDict[AddressKey] = address //ip      e.g: "192.168.0.1"
-		ipDict[PrefixKey] = prefix   //subnet  e.g:  24
+		ipDict[AddressKey] = address // IP address, e.g: "192.168.0.1"
+		ipDict[PrefixKey] = prefix   // Subnet, e.g: 24
 
 		connection[IPV4Key][AddressDataKey] = []DBusDict{ipDict}
-		connectionSuffix = "static"
-
 	}
+}
+
+// putDNSConfig puts the DNS configuration.
+func putDNSConfig(protoData *v1.Interface, connection nm.ConnectionSettings) {
 	if protoData.DNSConfig != nil {
 		var dns1, dns2 uint32
 		if len(protoData.DNSConfig.PrimaryDNS) > 0 {
@@ -245,28 +283,40 @@ func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.Connect
 		}
 
 		if protoData.DHCP == Enabled {
-			// If connection already has DNS config which gathered from DHCP, ignore it.
 			connection[IPV4Key][DNSIgnoreAutoKey] = Yes
 		}
 	}
+}
 
+// determineIdentifier determines the identifier for the connection ID.
+func determineIdentifier(protoData *v1.Interface) string {
 	identifier := ""
 	if protoData.Label != "" {
 		identifier = protoData.Label
 	} else if protoData.MacAddress != "" {
 		identifier = protoData.MacAddress
 	}
+	return identifier
+}
 
+// setConnectionDetails sets the connection ID, UUID, and timestamp.
+func setConnectionDetails(connection nm.ConnectionSettings, protoData *v1.Interface, identifier string, connectionSuffix string, deviceName string) {
 	connection[ConnectionKey][IDKey] = fmt.Sprintf("%s_%s", identifier, connectionSuffix)
 	connection[ConnectionKey][UUIDKey] = uuid.New().String()
 	connection[ConnectionKey][TimeStampKey] = time.Now().Unix()
-
 	connection[ConnectionKey][TypeKey] = EthernetType
 	connection[ConnectionKey][InterfaceNameKey] = deviceName
-	uintMac, _ := net.ParseMAC(protoData.MacAddress)
-	connection[EthernetType][MACAddressKey] = uintMac
 
-	return connection
+	putMACAddress(protoData, connection)
+}
+
+// putMACAddress puts the MAC address and sets the MACAddressKey.
+func putMACAddress(protoData *v1.Interface, connection nm.ConnectionSettings) {
+	uintMac, err := net.ParseMAC(protoData.MacAddress)
+	if err != nil {
+		log.Printf("Error parsing MAC address: %v", err)
+	}
+	connection[EthernetType][MACAddressKey] = uintMac
 }
 
 func GetMapWithUppercase(inputMap map[string]string) map[string]string {
