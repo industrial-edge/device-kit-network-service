@@ -46,6 +46,7 @@ var mockedStdout = []byte(`[{
         },
         "Labels": {}
     }]`)
+
 func fakeExecCommand(command string, args ...string) *exec.Cmd {
 	fmt.Println("Fake EXEC Called")
 	cs := []string{"-test.run=TestExecCommandHelper", "--", command}
@@ -67,27 +68,24 @@ func TestExecCommandHelper(t *testing.T) {
 	os.Exit(i)
 }
 
-func Test_DockerNetworkGetMacvlanConnection(t *testing.T) {
-
+func Test_SuccessDockerNetworkGetMacvlanConnection_ValidGateway(t *testing.T) {
 	execCommand = fakeExecCommand
 	defer func() { execCommand = exec.Command }()
 
 	outL2 := dockerNetworkGetMacvlanConnection("ens18")
 
 	if outL2.Gateway != "192.168.18.24" {
-		t.Errorf("Expected %s, got %s","192.168.18.24"  , outL2.Gateway)
+		t.Errorf("Expected %s, got %s", "192.168.18.24", outL2.Gateway)
 	}
 }
 
-
-func Test_DockerNetworkGetMacvlanConnectionWithDummyInterfaceName(t *testing.T) {
-
+func Test_FailureDockerNetworkGetMacvlanConnection_InvalidInterface(t *testing.T) {
 	execCommand = fakeExecCommand
 	defer func() { execCommand = exec.Command }()
 
-	outL2 := dockerNetworkGetMacvlanConnection("DummyInterfaceName")
+	outL2 := dockerNetworkGetMacvlanConnection("InvalidInterfaceName")
 
 	if outL2.Gateway != "" {
-		t.Errorf("Expected %s, got %s",""  , outL2.Gateway)
+		t.Errorf("Expected %s, got %s", "", outL2.Gateway)
 	}
 }
