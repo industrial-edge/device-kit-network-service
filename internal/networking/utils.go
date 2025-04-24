@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Siemens AG
+ * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -10,15 +10,16 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
-	nm "github.com/Wifx/gonetworkmanager/v2"
-	"github.com/godbus/dbus/v5"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"strings"
 	"time"
+
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	"github.com/godbus/dbus/v5"
+	"github.com/google/uuid"
 )
 
 // dict Dictionary type
@@ -104,25 +105,67 @@ func parseDns(dnsArray []nm.IP4NameserverData) *v1.Interface_Dns {
 	return dns
 }
 
-func listConnections(device nm.Device) []nm.Connection {
-
+func listConnections(device nm.DeviceWired) []nm.Connection {
 	var connections []nm.Connection
-	val, _ := nm.NewSettings()
-	//do not change
-	//active and available connections functions does not include all connections under a device.
-	allConnections, _ := val.ListConnections()
-	name, _ := device.GetPropertyInterface()
 
-	if allConnections != nil {
-		for _, element := range allConnections {
-			settings, _ := element.GetSettings()
-			if settings[ConnectionKey][InterfaceNameKey] == name &&
-				settings[ConnectionKey][TypeKey] == EthernetType {
-				connections = append(connections, element)
-			}
+	interfaceName, err := device.GetPropertyInterface()
+	if err != nil {
+		log.Printf("Error getting interface interfaceName: %v", err)
+	}
+
+	availableConnectionsForDevice, err := device.GetPropertyAvailableConnections()
+	if err != nil {
+		log.Printf("Error getting available connections: %v", err)
+	}
+
+	activeConnection, err := device.GetPropertyActiveConnection()
+	if err != nil {
+		log.Printf("Error getting active connection: %v", err)
+	}
+
+	var activeConnectionUUID, activeConnectionId string
+	if activeConnection != nil {
+		activeConnectionUUID, activeConnectionId = getActiveConnectionDetails(activeConnection)
+	}
+
+	for _, connection := range availableConnectionsForDevice {
+		if isValidConnection(connection, interfaceName, activeConnectionUUID, activeConnectionId) {
+			connections = append(connections, connection)
 		}
 	}
 	return connections
+}
+
+func getActiveConnectionDetails(activeConnection nm.ActiveConnection) (string, string) {
+	activeConnectionUUID, err := activeConnection.GetPropertyUUID()
+	if err != nil {
+		log.Printf("Error getting UUID: %v", err)
+	}
+
+	activeConnectionId, err := activeConnection.GetPropertyID()
+	if err != nil {
+		log.Printf("Error getting ID: %v", err)
+	}
+
+	return activeConnectionUUID, activeConnectionId
+}
+
+func isValidConnection(connection nm.Connection, name, activeConnectionUUID, activeConnectionID string) bool {
+	settings, _ := connection.GetSettings()
+	interfaceName := settings[ConnectionKey][InterfaceNameKey]
+	connectionType := settings[ConnectionKey][TypeKey]
+	connectionUUID := settings[ConnectionKey][UUIDKey]
+	connectionID := settings[ConnectionKey][IDKey]
+
+	if connectionType != EthernetType {
+		return false
+	}
+
+	if interfaceName != nil && interfaceName != "" {
+		return interfaceName == name
+	}
+
+	return connectionUUID == activeConnectionUUID && connectionID == activeConnectionID
 }
 
 func DBusToProto(device nm.DeviceWired) *v1.Interface {
@@ -150,8 +193,7 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 		values, _ = allConnections[0].GetSettings()
 		retVal = convertToProto(values, nil, mac)
 	} else {
-		retVal = &v1.Interface{MacAddress: mac}
-		retVal = &v1.Interface{Label: deviceName}
+		retVal = &v1.Interface{MacAddress: mac, Label: deviceName}
 	}
 
 	// get device interface name
@@ -163,7 +205,7 @@ func DBusToProto(device nm.DeviceWired) *v1.Interface {
 	retVal.L2Conf = l2device
 
 	retVal.InterfaceName = interfaceName
-	retVal.Label = getLabelForInterface(interfaceName)
+	retVal.Label, _ = getLabelForInterface(interfaceName)
 
 	return retVal
 }
@@ -181,18 +223,6 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 		retVal.Static = parseStaticIPConfig(connection)
 		retVal.DHCP = Disabled
 	}
-
-	if val, ok := connection[IPV4Key]; ok {
-		if v, o := val[RouteMetricKey]; o {
-			if v != nil && v.(int64) == 1 {
-				retVal.GatewayInterface = true
-			}
-		}
-	}
-
-	//if connection[IPV4Key][RouteMetricKey] != nil && connection[IPV4Key][RouteMetricKey].(int64) == 1 {
-	//	retVal.GatewayInterface = true
-	//}
 
 	if ipv4Config != nil {
 		dnsArray, _ := ipv4Config.GetPropertyNameserverData()
@@ -234,6 +264,141 @@ func applyConnectionSetting(connectionSuffix string, protoData *v1.Interface, co
 	}
 
 	putDNSConfig(protoData, connection)
+}
+
+// ConfigureExistingGatewayInterfacesExceptProtoData sets the route metric for all Ethernet device connections
+// if the GatewayInterface flag is enabled in the provided protoData.
+func ConfigureExistingGatewayInterfacesExceptProtoData(protoData *v1.Interface, networkConfigurator NetworkConfigurator) error {
+	if !protoData.GatewayInterface {
+		return nil
+	}
+
+	allEthernetDevices := networkConfigurator.getAllEthernetDevices()
+
+	for _, ethernetDevice := range allEthernetDevices {
+		if err := setGatewayInterfaceForDeviceConnections(ethernetDevice, protoData, networkConfigurator); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// setGatewayInterfaceForDeviceConnections iterates over all connections of the given Ethernet device
+// and sets the route metric for each connection based on the provided protoData.
+func setGatewayInterfaceForDeviceConnections(ethernetDevice nm.DeviceWired, protoData *v1.Interface, networkConfigurator NetworkConfigurator) error {
+	for _, connection := range listConnections(ethernetDevice) {
+		if err := checkAndUpdateGatewayInterfaceForConnection(connection, protoData, ethernetDevice, networkConfigurator); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deactivateAndActivateConnection deactivates the current active connection of the Ethernet device
+// and activates the provided connection. Logs the process and handles errors appropriately.
+func deactivateAndActivateConnection(ethernetDevice nm.DeviceWired, connection nm.Connection, networkConfigurator NetworkConfigurator) error {
+	activeConnection, err := ethernetDevice.GetPropertyActiveConnection()
+	if err != nil {
+		return fmt.Errorf("failed to get active connection: %w", err)
+	}
+
+	if activeConnection == nil {
+		ethernetDeviceMacAddress, _ := ethernetDevice.GetPropertyHwAddress()
+		log.Printf("No active connection found for device: %v", ethernetDeviceMacAddress)
+		return nil
+	}
+
+	if err = networkConfigurator.gnm.DeactivateConnection(activeConnection); err != nil {
+		return fmt.Errorf("failed to deactivate connection: %w", err)
+	}
+
+	if _, err = networkConfigurator.gnm.ActivateConnection(connection, ethernetDevice, nil); err != nil {
+		return fmt.Errorf("failed to activate connection: %w", err)
+	}
+
+	log.Println("Connection successfully reactivated")
+	return nil
+}
+
+// checkAndUpdateGatewayInterfaceForConnection updates the route metric for the given connection
+// if the MAC address or label in protoData does not match the current settings.
+func checkAndUpdateGatewayInterfaceForConnection(connection nm.Connection, protoData *v1.Interface, ethernetDevice nm.DeviceWired,
+	networkConfigurator NetworkConfigurator) error {
+	settings, err := connection.GetSettings()
+	if err != nil {
+		return fmt.Errorf("failed to get settings for connection: %w", err)
+	}
+
+	if settings[EthernetType][MACAddressKey] == nil {
+		if err := setMacAddressInSettings(settings, ethernetDevice); err != nil {
+			return err
+		}
+	}
+
+	macStr := getMacAddressFromSettings(settings)
+	if willGatewayInterfaceBeUpdated(protoData, macStr, settings) {
+		if err := changePriorityOfGatewayInterface(settings, connection); err != nil {
+			return err
+		}
+		err := deactivateAndActivateConnection(ethernetDevice, connection, networkConfigurator)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// setMacAddressInSettings sets the MAC address in the connection settings
+// by retrieving the permanent hardware address from the Ethernet device.
+func setMacAddressInSettings(settings nm.ConnectionSettings, ethernetDevice nm.DeviceWired) error {
+	retValue, _ := ethernetDevice.GetPropertyPermHwAddress()
+	macAddr, err := net.ParseMAC(retValue)
+	if err != nil {
+		return err
+	}
+	settings[EthernetType][MACAddressKey] = []uint8(macAddr)
+	return nil
+}
+
+// willGatewayInterfaceBeUpdated checks if the route metric needs to be updated
+// based on the MAC address or label in the provided protoData.
+func willGatewayInterfaceBeUpdated(protoData *v1.Interface, macStr string, settings nm.ConnectionSettings) bool {
+	if protoData.MacAddress != "" {
+		return strings.ToUpper(protoData.MacAddress) != macStr
+	} else if protoData.Label != "" {
+		return strings.ToLower(getInterfaceForLabel(protoData.Label)) != settings[ConnectionKey][InterfaceNameKey]
+	}
+	return false
+}
+
+// getMacAddressFromSettings retrieves the MAC address from the connection settings
+// and returns it as a formatted string.
+func getMacAddressFromSettings(settings nm.ConnectionSettings) string {
+	mac := settings[EthernetType][MACAddressKey].([]byte)
+	macStr := fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+
+	return strings.ToUpper(macStr)
+}
+
+// changePriorityOfGatewayInterface updates the route metric in the connection settings
+// and removes IPv6 addresses and routes. Logs the update process.
+func changePriorityOfGatewayInterface(settings nm.ConnectionSettings, connection nm.Connection) error {
+	settings[IPV4Key][RouteMetricKey] = int32(-1)
+
+	delete(settings["ipv6"], "addresses")
+	delete(settings["ipv6"], "routes")
+
+	err := connection.Update(settings)
+	if err != nil {
+		return fmt.Errorf("failed to update connection: %w", err)
+	}
+
+	log.Printf("Connection ID: %v has been updated with Route Metric value: %v", settings[ConnectionKey][IDKey],
+		settings[IPV4Key][RouteMetricKey])
+
+	return nil
 }
 
 // initializeConnectionSettings initializes the connection settings.
@@ -363,20 +528,18 @@ func getInterfaceForLabel(label string) string {
 	return interfaceName
 }
 
-func getLabelForInterface(interfaceName string) string {
+func getLabelForInterface(interfaceName string) (string, error) {
 	labelMap, err := readMapFromFile(LabelMapFileName)
-
-	if err == nil {
-		for label, value := range labelMap {
-			if value == strings.ToUpper(interfaceName) {
-				return label
-			}
-		}
-
-		log.Printf("There is no label for interface %s.", interfaceName)
-	} else {
-		log.Println(err)
+	if err != nil {
+		return "", fmt.Errorf("failed to read label map from file: %w", err)
 	}
 
-	return ""
+	upperInterfaceName := strings.ToUpper(interfaceName)
+	for label, value := range labelMap {
+		if value == upperInterfaceName {
+			return label, nil
+		}
+	}
+
+	return "", fmt.Errorf("interface not found: %s", interfaceName)
 }

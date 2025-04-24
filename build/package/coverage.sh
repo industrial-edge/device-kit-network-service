@@ -1,4 +1,8 @@
 #!/bin/bash
+# Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+# Licensed under the MIT license
+# See LICENSE file in the top-level directory
+
 #
 # Code coverage generation
 set -ex
@@ -11,7 +15,7 @@ mkdir -p "$COVERAGE_DIR";
 # Create a coverage file for each package
 for package in ${PKG_LIST}; do
     echo "Generating global code coverage report for $package"
-    go test -covermode=count -coverprofile "${COVERAGE_DIR}/${package##*/}.cov" "$package" ;
+    go test -gcflags=all=-l -covermode=count -coverprofile "${COVERAGE_DIR}/${package##*/}.cov" "$package" ;
 done ;
 
 # Merge the coverage profile files
