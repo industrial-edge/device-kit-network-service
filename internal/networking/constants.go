@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright (c) 2021 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -68,10 +68,4 @@ const (
 	AddressDataKey = "address-data"
 	// LabelMapFileName
 	LabelMapFileName = "/var/network.label"
-	// Highest Possible Metric Value
-	MaxMetricValue = 255
-	// Route Destination Value For Outgoing Traffic
-	OutgoingRouteDestination = "0.0.0.0"
-	// Prefix For Outgoing Traffic
-	OutgoingRoutePrefix = 0
 )

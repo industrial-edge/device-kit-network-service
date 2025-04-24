@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright (c) 2021 Siemens AG
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -8,13 +8,11 @@ package networking
 
 import (
 	"errors"
-	"fmt"
+	nm "github.com/Wifx/gonetworkmanager/v2"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"strings"
-
-	nm "github.com/Wifx/gonetworkmanager/v2"
 )
 
 // Network interface that can perform
@@ -66,139 +64,20 @@ func (nc *NetworkConfigurator) GetInterfaceWithLabel(Label string) *v1.Interface
 	return DBusToProto(device)
 }
 
-// IsGatewayInterface checks if the interface with the given MAC address is the gateway interface.
-func (nc *NetworkConfigurator) IsGatewayInterface(mac string) bool {
-	devices := nc.getAllEthernetDevices()
-
-	gatewayMAC := nc.findGatewayMAC(devices)
-	log.Printf("Identified gateway MAC: %v\n", gatewayMAC)
-
-	// Compare the gateway MAC with the input MAC.
-	isGateway := strings.EqualFold(gatewayMAC, mac)
-	log.Printf("Device with MAC %s has gateway interface value: %t\n", mac, isGateway)
-
-	return isGateway
-}
-
-// findGatewayMAC identifies the MAC address of the gateway interface with the lowest metric.
-func (nc *NetworkConfigurator) findGatewayMAC(devices []nm.DeviceWired) string {
-	log.Println("Starting findGatewayMAC: Identifying the gateway MAC with the lowest metric.")
-
-	var lowestMetric uint8 = MaxMetricValue // Initialize with the highest possible metric value
-	var gatewayMAC string
-
-	for _, device := range devices {
-		log.Printf("Processing device: %v\n", device)
-
-		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
-		if err != nil {
-			log.Printf("Error fetching gateway MAC and metric for device %v: %v\n", device, err)
-			continue
-		}
-		log.Printf("Device %v has MAC %v and metric %d\n", device, mac, metric)
-		if metric < lowestMetric {
-			log.Printf("New lowest metric found: %d (previous: %d). Updating gateway MAC to %v.\n", metric, lowestMetric, mac)
-			lowestMetric = metric
-			gatewayMAC = mac
-		}
-	}
-
-	log.Printf("Identified gateway MAC: %v\n", gatewayMAC)
-	return gatewayMAC
-}
-
-func (nc *NetworkConfigurator) getDeviceGatewayMACAndMetric(device nm.DeviceWired) (string, uint8, error) {
-	log.Printf("Starting getDeviceGatewayMACAndMetric for device: %v\n", device)
-
-	conn, err := device.GetPropertyActiveConnection()
-	if err != nil || conn == nil {
-		log.Printf("No active connection for device %v: %v\n", device, err)
-		return "", 0, fmt.Errorf("no active connection for device")
-	}
-	log.Printf("Active connection retrieved for device %v: %v\n", device, conn)
-
-	IPv4Wrapper, err := conn.GetPropertyIP4Config()
-	if err != nil {
-		log.Printf("Failed to get IPv4 configuration for device %v: %v\n", device, err)
-		return "", 0, fmt.Errorf("failed to get IPv4 configuration")
-	}
-	log.Printf("IPv4 configuration retrieved for device %v: %v\n", device, IPv4Wrapper)
-
-	routeData, err := IPv4Wrapper.GetPropertyRouteData()
-	if err != nil {
-		log.Printf("Failed to get route data for device %v: %v\n", device, err)
-		return "", 0, fmt.Errorf("failed to get route data")
-	}
-	log.Printf("Route data retrieved for device %v: %v\n", device, routeData)
-
-	for _, route := range routeData {
-		log.Printf("Inspecting route: Destination=%v, Prefix=%v, Metric=%v\n", route.Destination, route.Prefix, route.Metric)
-		if route.Destination == OutgoingRouteDestination && route.Prefix == OutgoingRoutePrefix {
-			mac, err := device.GetPropertyHwAddress()
-			log.Printf("Hardware address retrieved for device %s: %s, error: %v\n", device, mac, err)
-			return mac, route.Metric, nil
-		}
-	}
-
-	log.Printf("No matching route found for device %v\n", device)
-	return "", 0, fmt.Errorf("no matching route found")
-}
-
-// GetEthernetInterfaces returns all Ethernet typed interfaces on a device.
+// GetEthernetInterfaces Returns All Ethernet typed interfaces on a device
 func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
-	log.Println("Starting GetEthernetInterfaces: Fetching all Ethernet interfaces.")
 
 	devices := nc.getAllEthernetDevices()
-	log.Printf("Fetched %d Ethernet devices: %v\n", len(devices), devices)
-
-	// Collect all interfaces into a slice.
 	var interfaces []*v1.Interface
+
 	for _, device := range devices {
-		log.Printf("Converting device %v to proto representation.", device)
+		name, _ := device.GetPropertyInterface()
+		mac, _ := device.GetPropertyHwAddress()
+		log.Printf("interface found name: %v MAC: %v", name, mac)
 		proto := DBusToProto(device)
 		interfaces = append(interfaces, proto)
 	}
-
-	// Identify the gateway interface.
-	log.Println("Identifying the gateway interface.")
-	gatewayInterface := nc.findGatewayInterface(devices, interfaces)
-	if gatewayInterface != nil {
-		log.Printf("Gateway interface identified: %v\n", gatewayInterface)
-		gatewayInterface.GatewayInterface = true
-	}
-
-	log.Printf("Returning %d interfaces: %v\n", len(interfaces), interfaces)
 	return interfaces
-}
-
-// findGatewayInterface identifies the gateway interface with the lowest metric.
-func (nc *NetworkConfigurator) findGatewayInterface(devices []nm.DeviceWired, interfaces []*v1.Interface) *v1.Interface {
-	log.Println("Starting findGatewayInterface: Identifying gateway interface.")
-
-	var lowestMetric uint8 = MaxMetricValue // Initialize with the highest possible metric value
-	var gatewayInterface *v1.Interface
-
-	for i, device := range devices {
-		log.Printf("Processing device at index %d: %v\n", i, device)
-
-		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
-		if err != nil {
-			log.Printf("Error fetching gateway MAC and metric for device %v: %v\n", device, err)
-			continue
-		}
-
-		log.Printf("Device %v has metric %d and MAC %v\n", device, metric, mac)
-
-		if metric < lowestMetric {
-			log.Printf("New lowest metric found: %d (previous: %d). Updating gateway interface.\n", metric, lowestMetric)
-			lowestMetric = metric
-			gatewayInterface = interfaces[i]
-		}
-	}
-
-	log.Printf("Identified Gateway interface: %v\n", gatewayInterface)
-
-	return gatewayInterface
 }
 
 // ArePreconditionsOk Checks all preconditions before applying any settings.
