@@ -1,0 +1,1 @@
+For comprehensive guidelines on development processes, please refer to our central [Development Guide](https://code.siemens.com/industrial-edge/product/device-builder/device-model/iedk-guidelines/-/blob/main/docs/DEVELOPMENT.md?ref_type=heads) available in our primary repository.

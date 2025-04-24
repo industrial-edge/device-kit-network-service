@@ -1,3 +1,9 @@
+/*
+ * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
 package gonetworkmanager
 
 import (
