@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Siemens AG
+ * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -10,15 +10,16 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
-	nm "github.com/Wifx/gonetworkmanager/v2"
-	"github.com/godbus/dbus/v5"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"strings"
 	"time"
+
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	"github.com/godbus/dbus/v5"
+	"github.com/google/uuid"
 )
 
 // dict Dictionary type
@@ -222,18 +223,6 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 		retVal.Static = parseStaticIPConfig(connection)
 		retVal.DHCP = Disabled
 	}
-
-	if val, ok := connection[IPV4Key]; ok {
-		if v, o := val[RouteMetricKey]; o {
-			if v != nil && v.(int64) == 1 {
-				retVal.GatewayInterface = true
-			}
-		}
-	}
-
-	//if connection[IPV4Key][RouteMetricKey] != nil && connection[IPV4Key][RouteMetricKey].(int64) == 1 {
-	//	retVal.GatewayInterface = true
-	//}
 
 	if ipv4Config != nil {
 		dnsArray, _ := ipv4Config.GetPropertyNameserverData()

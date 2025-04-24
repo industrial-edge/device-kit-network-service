@@ -1,13 +1,14 @@
+/*
+ * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
 package networking
 
 import (
 	"bytes"
 	"errors"
-	nm "github.com/Wifx/gonetworkmanager/v2"
-	"github.com/agiledragon/gomonkey/v2"
-	"github.com/godbus/dbus/v5"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
@@ -16,6 +17,12 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	"github.com/agiledragon/gomonkey/v2"
+	"github.com/godbus/dbus/v5"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 func getMockInterfaceStaticConf() *v1.Interface_StaticConf {
@@ -430,7 +437,6 @@ func Test_ConvertToProto_ReturnsCorrectProtoWhenDHCPEnabled(t *testing.T) {
 	result := convertToProto(connection, mockIPV4Config, mac)
 
 	assert.Equal(t, Enabled, result.DHCP, "DHCP should be enabled")
-	assert.Equal(t, true, result.GatewayInterface, "GateWay interface should be true")
 	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
 }
 
@@ -456,7 +462,6 @@ func Test_ConvertToProto_ReturnsCorrectProtoWhenStaticIP(t *testing.T) {
 	result := convertToProto(connection, mockIPV4Config, mac)
 
 	assert.Equal(t, Disabled, result.DHCP, "DHCP should be disabled")
-	assert.Equal(t, true, result.GatewayInterface, "GateWay interface should be true")
 	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
 }
 
@@ -485,7 +490,6 @@ func Test_ConvertToProto_ReturnsCorrectProtoWithDHCPIPConfig(t *testing.T) {
 	result := convertToProto(connection, mockIPV4Config, mac)
 
 	assert.Equal(t, Enabled, result.DHCP, "DHCP should be enabled")
-	assert.Equal(t, true, result.GatewayInterface, "GateWay interface should be true")
 	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Siemens AG
+ * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -10,10 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
@@ -21,6 +17,11 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // IEDKService typical IEDK service should implement this.
@@ -46,6 +47,8 @@ type networkServer struct {
 type MainApp struct {
 	serverInstance *networkServer
 }
+
+const errMsgInterfaceNotFound = "Interface does not exist on this device!"
 
 // StartGRPC starts GPRC listen server.
 func (app *MainApp) StartGRPC(args []string) error {
@@ -123,16 +126,22 @@ func (n *networkServer) GetInterfaceWithMac(ctx context.Context,
 
 	log.Println("GetInterfaceWithMac() called")
 	n.Lock()
-	state := status.New(codes.OK, "GetInterfaceWithMac Done!").Err()
+	defer n.Unlock()
+
 	retVal := n.configurator.GetInterfaceWithMac(request.Mac)
 	if retVal == nil {
-		state = status.New(codes.NotFound, "Interface does not exist on this device!").Err()
+		log.Println(errMsgInterfaceNotFound)
+		return nil, status.New(codes.NotFound, errMsgInterfaceNotFound).Err()
 	}
 
-	n.Unlock()
+	// Check if it is the gateway interface.
+	if n.configurator.IsGatewayInterface(request.Mac) {
+		retVal.GatewayInterface = true
+	}
+	
 	log.Println("GetInterfaceWithMac() done")
-
-	return retVal, state
+	
+	return retVal, status.New(codes.OK, "GetInterfaceWithMac Done!").Err()
 }
 
 // ApplySettings applies given network configurations via NetworkManager
@@ -176,7 +185,7 @@ func (n *networkServer) GetInterfaceWithLabel(ctx context.Context, request *v1.N
 	state := status.New(codes.OK, "GetInterfaceWithLabel Done!").Err()
 	retVal := n.configurator.GetInterfaceWithLabel(request.Label)
 	if retVal == nil {
-		state = status.New(codes.NotFound, "Interface does not exist on this device!").Err()
+		state = status.New(codes.NotFound, errMsgInterfaceNotFound).Err()
 	}
 
 	n.Unlock()
