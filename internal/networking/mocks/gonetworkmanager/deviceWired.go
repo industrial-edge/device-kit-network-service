@@ -1,3 +1,9 @@
+/*
+ * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
 package gonetworkmanager
 
 import (
@@ -9,6 +15,11 @@ import (
 // Mocking nm.DeviceWired interface
 type MockDeviceWired struct {
 	mock.Mock
+}
+
+func (m *MockDeviceWired) SubscribeState(receiver chan nm.DeviceStateChange, exit chan struct{}) error {
+	args := m.Called(receiver, exit)
+	return args.Error(0)
 }
 
 func (m *MockDeviceWired) SetPropertyAutoConnect(b bool) error {
