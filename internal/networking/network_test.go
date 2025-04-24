@@ -1,16 +1,24 @@
+/*
+ * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Licensed under the MIT license
+ * See LICENSE file in the top-level directory
+ */
+
 package networking
 
 import (
 	"errors"
-	nm "github.com/Wifx/gonetworkmanager/v2"
-	"github.com/agiledragon/gomonkey/v2"
-	"github.com/godbus/dbus/v5"
-	"github.com/stretchr/testify/assert"
+	"fmt"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	mockgnm "networkservice/internal/networking/mocks/gonetworkmanager"
 	"reflect"
 	"testing"
+
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	"github.com/agiledragon/gomonkey/v2"
+	"github.com/godbus/dbus/v5"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_NewNetworkConfiguratorWithNM_ReturnsNonNilInstance(t *testing.T) {
@@ -24,6 +32,126 @@ func Test_NewNetworkConfiguratorWithNM_ReturnsNonNilInstance(t *testing.T) {
 func Test_NewNetworkConfigurator_ReturnsNonNilInstance(t *testing.T) {
 	nc := NewNetworkConfigurator()
 	assert.NotNil(t, nc, "NewNetworkConfigurator should return a non-nil NetworkConfigurator instance")
+}
+
+func Test_IsGatewayInterface_ReturnsTrueForMatchingMac(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevices := []nm.DeviceWired{
+		&mockgnm.MockDeviceWired{},
+	}
+	testMac := "00:0a:95:9d:68:16"
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getAllEthernetDevices", func(_ *NetworkConfigurator) []nm.DeviceWired {
+		return mockDevices
+	})
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "findGatewayMAC", func(_ *NetworkConfigurator, devices []nm.DeviceWired) string {
+		return testMac
+	})
+
+	result := nc.IsGatewayInterface(testMac)
+
+	assert.True(t, result, "IsGatewayInterface should return true for the gateway MAC")
+}
+
+func Test_IsGatewayInterface_ReturnsFalseForNonMatchingMac(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevices := []nm.DeviceWired{
+		&mockgnm.MockDeviceWired{},
+	}
+	gatewayMac := "00:0a:95:9d:68:16"
+	nonGatewayMac := "11:22:33:44:55:66"
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getAllEthernetDevices", func(_ *NetworkConfigurator) []nm.DeviceWired {
+		return mockDevices
+	})
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "findGatewayMAC", func(_ *NetworkConfigurator, devices []nm.DeviceWired) string {
+		return gatewayMac
+	})
+
+	result := nc.IsGatewayInterface(nonGatewayMac)
+
+	assert.False(t, result, "IsGatewayInterface should return false for a non-gateway MAC")
+}
+
+func Test_findGatewayMAC_ReturnsGatewayMacWithLowestMetric(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevices := []nm.DeviceWired{
+		&mockgnm.MockDeviceWired{},
+		&mockgnm.MockDeviceWired{},
+	}
+
+	expectedMac := "00:0a:95:9d:68:16"
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	callCount := 0
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getDeviceGatewayMACAndMetric", func(_ *NetworkConfigurator, device nm.DeviceWired) (string, uint8, error) {
+		if callCount == 0 {
+			callCount++
+			return "11:22:33:44:55:66", 50, nil
+		}
+		return expectedMac, 10, nil
+	})
+
+	result := nc.findGatewayMAC(mockDevices)
+
+	assert.Equal(t, expectedMac, result, "findGatewayMAC should return the MAC address with the lowest metric")
+}
+
+func Test_findGatewayMAC_ReturnsEmptyWhenNoDevicesHaveGateway(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevices := []nm.DeviceWired{
+		&mockgnm.MockDeviceWired{},
+	}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getDeviceGatewayMACAndMetric", func(_ *NetworkConfigurator, device nm.DeviceWired) (string, uint8, error) {
+		return "", 0, fmt.Errorf("no gateway found")
+	})
+
+	result := nc.findGatewayMAC(mockDevices)
+
+	assert.Equal(t, "", result, "findGatewayMAC should return an empty string when no gateway MAC is found")
+}
+func Test_getDeviceGatewayMACAndMetric_ReturnsCorrectMACAndMetric(t *testing.T) {
+    nc := &NetworkConfigurator{}
+    mockDevice := &mockgnm.MockDeviceWired{}
+    mockConn := &mockgnm.MockActiveConnection{}
+    mockIPv4Config := &mockgnm.MockIP4Config{}
+
+    mockRouteData := []nm.IP4RouteData{
+        {
+            Destination: "0.0.0.0",
+            Prefix:      0,
+            NextHop:     "192.168.1.1",
+            Metric:      10,
+        },
+    }
+
+    // Mock method returns
+    mockDevice.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
+    mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
+    mockConn.On("GetPropertyIP4Config").Return(mockIPv4Config, nil)
+    mockIPv4Config.On("GetPropertyRouteData").Return(mockRouteData, nil)
+
+    // Test the function
+    mac, metric, err := nc.getDeviceGatewayMACAndMetric(mockDevice)
+
+    // Assertions
+    assert.NoError(t, err, "Expected no error")
+    assert.Equal(t, "F7:2B:A1:D5:97:4E", mac, "Expected correct MAC address")
+    assert.Equal(t, uint8(10), metric, "Expected correct metric value")
 }
 
 func Test_GetInterfaceWithMac_ReturnsCorrectInterface(t *testing.T) {
@@ -111,8 +239,25 @@ func Test_GetEthernetInterfaces_ReturnsAllAvailableNetworkDevices(t *testing.T) 
 	nc := &NetworkConfigurator{}
 	mockDevice := &mockgnm.MockDeviceWired{}
 
+	mockConn := &mockgnm.MockActiveConnection{}
+	mockIPv4Config := &mockgnm.MockIP4Config{}
+
+	// Replace networking.RouteData with gonetworkmanager.IP4RouteData
+	mockRouteData := []nm.IP4RouteData{
+		{
+			Destination: "0.0.0.0",
+			Prefix:      0,
+			NextHop:     "192.168.1.1",
+			Metric:      10,
+		},
+	}
+
 	mockDevice.On("GetPropertyInterface").Return("eth0", nil)
 	mockDevice.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
+	mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
+
+	mockConn.On("GetPropertyIP4Config").Return(mockIPv4Config, nil)
+	mockIPv4Config.On("GetPropertyRouteData").Return(mockRouteData, nil)
 
 	patches := gomonkey.NewPatches()
 	defer patches.Reset()
@@ -136,6 +281,81 @@ func Test_GetEthernetInterfaces_ReturnsAllAvailableNetworkDevices(t *testing.T) 
 	assert.Equal(t, 2, len(result), "GetEthernetInterfaces should return the correct number of interfaces")
 	assert.Equal(t, "eth0", result[0].InterfaceName, "First interface should have the correct name")
 	assert.Equal(t, "eth0", result[1].InterfaceName, "Second interface should have the correct name")
+}
+
+func Test_GetEthernetInterfaces_EnsuresGatewayInterfaceIsMarked(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevice1 := &mockgnm.MockDeviceWired{}
+	mockDevice2 := &mockgnm.MockDeviceWired{}
+
+	mockConn1 := &mockgnm.MockActiveConnection{}
+	mockConn2 := &mockgnm.MockActiveConnection{}
+
+	mockIPv4Config1 := &mockgnm.MockIP4Config{}
+	mockIPv4Config2 := &mockgnm.MockIP4Config{}
+
+	mockRouteData1 := []nm.IP4RouteData{
+		{
+			Destination: "0.0.0.0",
+			Prefix:      0,
+			NextHop:     "192.168.1.1",
+			Metric:      10, // Lower metric, this will be marked as the gateway interface
+		},
+	}
+	mockRouteData2 := []nm.IP4RouteData{
+		{
+			Destination: "0.0.0.0",
+			Prefix:      0,
+			NextHop:     "192.168.2.1",
+			Metric:      20,
+		},
+	}
+
+	// Mock behaviors for Device 1
+	mockDevice1.On("GetPropertyInterface").Return("eth0", nil)
+	mockDevice1.On("GetPropertyActiveConnection").Return(mockConn1, nil)
+	mockConn1.On("GetPropertyIP4Config").Return(mockIPv4Config1, nil)
+	mockIPv4Config1.On("GetPropertyRouteData").Return(mockRouteData1, nil)
+	
+	// Mock behaviors for Device 2
+	mockDevice2.On("GetPropertyInterface").Return("eth1", nil)
+	mockDevice2.On("GetPropertyActiveConnection").Return(mockConn2, nil)
+	mockConn2.On("GetPropertyIP4Config").Return(mockIPv4Config2, nil)
+	mockIPv4Config2.On("GetPropertyRouteData").Return(mockRouteData2, nil)
+
+	mockDevice1.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
+	mockDevice2.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4", nil)
+	
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getAllEthernetDevices", func(_ *NetworkConfigurator) []nm.DeviceWired {
+		return []nm.DeviceWired{mockDevice1, mockDevice2}
+	})
+
+	patches.ApplyFunc(DBusToProto, func(device nm.DeviceWired) *v1.Interface {
+		name, _ := device.GetPropertyInterface()
+		return &v1.Interface{
+			InterfaceName: name,
+			MacAddress:    "00:0a:95:9d:68:16",
+		}
+	})
+
+	result := nc.GetEthernetInterfaces()
+
+	// Assert that at least one interface has GatewayInterface set to true
+	gatewayInterfaceFound := false
+	for _, iface := range result {
+		if iface.GatewayInterface {
+			gatewayInterfaceFound = true
+			break
+		}
+	}
+
+	assert.True(t, gatewayInterfaceFound, "At least one network interface should have GatewayInterface set to true")
+	assert.Equal(t, 2, len(result), "Expected two interfaces")
+	assert.Equal(t, "eth0", result[0].InterfaceName, "First interface should be eth0")
+	assert.Equal(t, "eth1", result[1].InterfaceName, "Second interface should be eth1")
 }
 
 func Test_ArePreconditionsOk_ReturnsTrueWithValidSettings(t *testing.T) {
