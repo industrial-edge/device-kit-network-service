@@ -1,8 +1,3 @@
-# Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
-# Licensed under the MIT license
-# See LICENSE file in the top-level directory
-
-version: 2
 project_name: dm-network
 dist: dist
 env:
@@ -16,7 +11,7 @@ snapshot:
   # for example).
   #
   # Default is `{{ .Tag }}-SNAPSHOT-{{.ShortCommit}}`.
-  version_template: "{{ .Env.TAG }}"
+  name_template: "{{ .Env.TAG }}"
 
 builds:
   - main: ../../cmd/networkservice
