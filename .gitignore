@@ -3,7 +3,7 @@
 .vscode/*
 .cache/*
 report/*
-
+.gitlab/*
 !report/.gitkeep
 **/.coverage
 build/network-service_*
