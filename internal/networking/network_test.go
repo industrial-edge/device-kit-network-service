@@ -102,6 +102,14 @@ func Test_findGatewayMAC_ReturnsGatewayMacWithLowestMetric(t *testing.T) {
 		return expectedMac, 10, nil
 	})
 
+	patches.ApplyPrivateMethod(reflect.TypeOf(&mockgnm.MockDeviceWired{}), "GetPropertyHwAddress", func(device nm.DeviceWired) (string, error) {
+		if callCount == 0 {
+			callCount++
+			return "11:22:33:44:55:66", nil
+		}
+		return expectedMac, nil
+	})
+
 	result := nc.findGatewayMAC(mockDevices)
 
 	assert.Equal(t, expectedMac, result, "findGatewayMAC should return the MAC address with the lowest metric")
@@ -120,38 +128,95 @@ func Test_findGatewayMAC_ReturnsEmptyWhenNoDevicesHaveGateway(t *testing.T) {
 		return "", 0, fmt.Errorf("no gateway found")
 	})
 
+	patches.ApplyMethod(reflect.TypeOf(&mockgnm.MockDeviceWired{}), "GetPropertyHwAddress", func(_ nm.DeviceWired) (string, error) {
+		return "00:0a:95:9d:68:16", nil
+	})
+
 	result := nc.findGatewayMAC(mockDevices)
 
 	assert.Equal(t, "", result, "findGatewayMAC should return an empty string when no gateway MAC is found")
 }
 func Test_getDeviceGatewayMACAndMetric_ReturnsCorrectMACAndMetric(t *testing.T) {
-    nc := &NetworkConfigurator{}
-    mockDevice := &mockgnm.MockDeviceWired{}
-    mockConn := &mockgnm.MockActiveConnection{}
-    mockIPv4Config := &mockgnm.MockIP4Config{}
+	nc := &NetworkConfigurator{}
+	mockDevice := &mockgnm.MockDeviceWired{}
+	mockConn := &mockgnm.MockActiveConnection{}
+	mockIPv4Config := &mockgnm.MockIP4Config{}
 
-    mockRouteData := []nm.IP4RouteData{
-        {
-            Destination: "0.0.0.0",
-            Prefix:      0,
-            NextHop:     "192.168.1.1",
-            Metric:      10,
-        },
-    }
+	mockRouteData := []nm.IP4RouteData{
+		{
+			Destination: "0.0.0.0",
+			Prefix:      0,
+			NextHop:     "192.168.1.1",
+			Metric:      10,
+		},
+	}
 
-    // Mock method returns
-    mockDevice.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
-    mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
-    mockConn.On("GetPropertyIP4Config").Return(mockIPv4Config, nil)
-    mockIPv4Config.On("GetPropertyRouteData").Return(mockRouteData, nil)
+	// Mock method returns
+	mockDevice.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
+	mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
+	mockConn.On("GetPropertyIP4Config").Return(mockIPv4Config, nil)
+	mockIPv4Config.On("GetPropertyRouteData").Return(mockRouteData, nil)
 
-    // Test the function
-    mac, metric, err := nc.getDeviceGatewayMACAndMetric(mockDevice)
+	// Test the function
+	mac, metric, err := nc.getDeviceGatewayMACAndMetric(mockDevice)
 
-    // Assertions
-    assert.NoError(t, err, "Expected no error")
-    assert.Equal(t, "F7:2B:A1:D5:97:4E", mac, "Expected correct MAC address")
-    assert.Equal(t, uint8(10), metric, "Expected correct metric value")
+	// Assertions
+	assert.NoError(t, err, "Expected no error")
+	assert.Equal(t, "F7:2B:A1:D5:97:4E", mac, "Expected correct MAC address")
+	assert.Equal(t, uint8(10), metric, "Expected correct metric value")
+}
+
+func Test_getDeviceGatewayMACAndMetric_DeviceIsNil(t *testing.T) {
+	nc := &NetworkConfigurator{}
+
+	mac, metric, err := nc.getDeviceGatewayMACAndMetric(nil)
+
+	assert.Error(t, err, "Expected an error")
+	assert.Equal(t, "", mac, "Expected empty MAC address")
+	assert.Equal(t, uint8(0), metric, "Expected metric value to be 0")
+	assert.Equal(t, "device is nil", err.Error(), "Expected error message to be 'device is nil'")
+}
+
+type mockIP4Config struct {
+	nm.IP4Config
+}
+
+func Test_getDeviceGatewayMACAndMetric_IPv4WrapperIsNil(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevice := &mockgnm.MockDeviceWired{}
+	mockConn := &mockgnm.MockActiveConnection{}
+	anyHwAddress := "F7:2B:A1:D5:97:4E"
+
+	mockDevice.On("GetPropertyHwAddress").Return(anyHwAddress, nil)
+	mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
+	mockConn.On("GetPropertyIP4Config").Return((*mockIP4Config)(nil), nil)
+
+	mac, metric, err := nc.getDeviceGatewayMACAndMetric(mockDevice)
+
+	assert.Error(t, err, "Expected an error")
+	assert.Equal(t, "", mac, "Expected empty MAC address")
+	assert.Equal(t, uint8(0), metric, "Expected metric value to be 0")
+	assert.Equal(t, "failed to get IPv4 configuration", err.Error(), "Expected error message to be 'failed to get IPv4 configuration'")
+}
+
+func Test_getDeviceGatewayMACAndMetric_RouteDataIsNil(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockDevice := &mockgnm.MockDeviceWired{}
+	mockConn := &mockgnm.MockActiveConnection{}
+	mockIPv4Config := &mockgnm.MockIP4Config{}
+	anyHwAddress := "F7:2B:A1:D5:97:4E"
+
+	mockDevice.On("GetPropertyHwAddress").Return(anyHwAddress, nil)
+	mockDevice.On("GetPropertyActiveConnection").Return(mockConn, nil)
+	mockConn.On("GetPropertyIP4Config").Return(mockIPv4Config, nil)
+	mockIPv4Config.On("GetPropertyRouteData").Return([]nm.IP4RouteData{}, fmt.Errorf("failed to get route data"))
+
+	mac, metric, err := nc.getDeviceGatewayMACAndMetric(mockDevice)
+
+	assert.Error(t, err, "Expected an error")
+	assert.Equal(t, "", mac, "Expected empty MAC address")
+	assert.Equal(t, uint8(0), metric, "Expected metric value to be 0")
+	assert.Equal(t, "failed to get route data", err.Error(), "Expected error message to be 'failed to get route data'")
 }
 
 func Test_GetInterfaceWithMac_ReturnsCorrectInterface(t *testing.T) {
@@ -316,7 +381,7 @@ func Test_GetEthernetInterfaces_EnsuresGatewayInterfaceIsMarked(t *testing.T) {
 	mockDevice1.On("GetPropertyActiveConnection").Return(mockConn1, nil)
 	mockConn1.On("GetPropertyIP4Config").Return(mockIPv4Config1, nil)
 	mockIPv4Config1.On("GetPropertyRouteData").Return(mockRouteData1, nil)
-	
+
 	// Mock behaviors for Device 2
 	mockDevice2.On("GetPropertyInterface").Return("eth1", nil)
 	mockDevice2.On("GetPropertyActiveConnection").Return(mockConn2, nil)
@@ -325,7 +390,7 @@ func Test_GetEthernetInterfaces_EnsuresGatewayInterfaceIsMarked(t *testing.T) {
 
 	mockDevice1.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4E", nil)
 	mockDevice2.On("GetPropertyHwAddress").Return("F7:2B:A1:D5:97:4", nil)
-	
+
 	patches := gomonkey.NewPatches()
 	defer patches.Reset()
 

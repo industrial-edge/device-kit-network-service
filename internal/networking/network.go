@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"reflect"
 	"strings"
 
 	nm "github.com/Wifx/gonetworkmanager/v2"
@@ -88,14 +89,15 @@ func (nc *NetworkConfigurator) findGatewayMAC(devices []nm.DeviceWired) string {
 	var gatewayMAC string
 
 	for _, device := range devices {
-		log.Printf("Processing device: %v\n", device)
+		hwAddr, _ := device.GetPropertyHwAddress()
+		log.Printf("Processing device: MAC=%s\n", hwAddr)
 
 		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
 		if err != nil {
-			log.Printf("Error fetching gateway MAC and metric for device %v: %v\n", device, err)
+			log.Printf("Error fetching gateway MAC and metric for device: MAC=%s: %v\n", hwAddr, err)
 			continue
 		}
-		log.Printf("Device %v has MAC %v and metric %d\n", device, mac, metric)
+		log.Printf("Device with MAC %s has metric value: %d\n", mac, metric)
 		if metric < lowestMetric {
 			log.Printf("New lowest metric found: %d (previous: %d). Updating gateway MAC to %v.\n", metric, lowestMetric, mac)
 			lowestMetric = metric
@@ -108,39 +110,46 @@ func (nc *NetworkConfigurator) findGatewayMAC(devices []nm.DeviceWired) string {
 }
 
 func (nc *NetworkConfigurator) getDeviceGatewayMACAndMetric(device nm.DeviceWired) (string, uint8, error) {
-	log.Printf("Starting getDeviceGatewayMACAndMetric for device: %v\n", device)
+	if device == nil {
+		log.Printf("Device is nil")
+		return "", 0, fmt.Errorf("device is nil")
+	}
+
+	hwAddr, err := device.GetPropertyHwAddress()
+	if err != nil {
+		return "", 0, fmt.Errorf("Error retrieving device's MAC address: %v", err)
+	}
+
+	log.Printf("Starting getDeviceGatewayMACAndMetric for device: MAC=%s\n", hwAddr)
 
 	conn, err := device.GetPropertyActiveConnection()
 	if err != nil || conn == nil {
-		log.Printf("No active connection for device %v: %v\n", device, err)
+		log.Printf("No active connection for device: MAC=%s err=%v\n", hwAddr, err)
 		return "", 0, fmt.Errorf("no active connection for device")
 	}
-	log.Printf("Active connection retrieved for device %v: %v\n", device, conn)
+	log.Printf("Active connection retrieved for device: MAC=%s: %v\n", hwAddr, conn)
 
 	IPv4Wrapper, err := conn.GetPropertyIP4Config()
-	if err != nil {
-		log.Printf("Failed to get IPv4 configuration for device %v: %v\n", device, err)
+	if err != nil || IPv4Wrapper == nil || (reflect.ValueOf(IPv4Wrapper).IsNil()) {
+		log.Printf("Failed to get IPv4 configuration for device: MAC=%s: %v\n", hwAddr, err)
 		return "", 0, fmt.Errorf("failed to get IPv4 configuration")
 	}
-	log.Printf("IPv4 configuration retrieved for device %v: %v\n", device, IPv4Wrapper)
+	log.Printf("IPv4 configuration retrieved for device: MAC=%s\n", hwAddr)
 
 	routeData, err := IPv4Wrapper.GetPropertyRouteData()
-	if err != nil {
-		log.Printf("Failed to get route data for device %v: %v\n", device, err)
+	if err != nil || routeData == nil {
+		log.Printf("Failed to get route data for device with MAC %s: %v\n", hwAddr, err)
 		return "", 0, fmt.Errorf("failed to get route data")
 	}
-	log.Printf("Route data retrieved for device %v: %v\n", device, routeData)
+	log.Printf("Route data retrieved for device with MAC=%s\n", hwAddr)
 
 	for _, route := range routeData {
 		log.Printf("Inspecting route: Destination=%v, Prefix=%v, Metric=%v\n", route.Destination, route.Prefix, route.Metric)
 		if route.Destination == OutgoingRouteDestination && route.Prefix == OutgoingRoutePrefix {
-			mac, err := device.GetPropertyHwAddress()
-			log.Printf("Hardware address retrieved for device %s: %s, error: %v\n", device, mac, err)
-			return mac, route.Metric, nil
+			return hwAddr, route.Metric, nil
 		}
 	}
-
-	log.Printf("No matching route found for device %v\n", device)
+	log.Printf("No matching route found for device with MAC=%s\n", hwAddr)
 	return "", 0, fmt.Errorf("no matching route found")
 }
 
@@ -154,13 +163,13 @@ func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
 	// Collect all interfaces into a slice.
 	var interfaces []*v1.Interface
 	for _, device := range devices {
-		log.Printf("Converting device %v to proto representation.", device)
+		hwAddr, _ := device.GetPropertyHwAddress()
+		log.Printf("Converting device with MAC=%s to proto representation.", hwAddr)
 		proto := DBusToProto(device)
 		interfaces = append(interfaces, proto)
 	}
 
 	// Identify the gateway interface.
-	log.Println("Identifying the gateway interface.")
 	gatewayInterface := nc.findGatewayInterface(devices, interfaces)
 	if gatewayInterface != nil {
 		log.Printf("Gateway interface identified: %v\n", gatewayInterface)
@@ -179,15 +188,16 @@ func (nc *NetworkConfigurator) findGatewayInterface(devices []nm.DeviceWired, in
 	var gatewayInterface *v1.Interface
 
 	for i, device := range devices {
-		log.Printf("Processing device at index %d: %v\n", i, device)
+		hwAddr, _ := device.GetPropertyHwAddress()
+		log.Printf("Processing device at index %d: MAC=%s\n", i, hwAddr)
 
 		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
 		if err != nil {
-			log.Printf("Error fetching gateway MAC and metric for device %v: %v\n", device, err)
+			log.Printf("Error fetching gateway MAC and metric for device with MAC=%s: %v\n", hwAddr, err)
 			continue
 		}
 
-		log.Printf("Device %v has metric %d and MAC %v\n", device, metric, mac)
+		log.Printf("Device with MAC %s has metric %d and MAC %v\n", hwAddr, metric, mac)
 
 		if metric < lowestMetric {
 			log.Printf("New lowest metric found: %d (previous: %d). Updating gateway interface.\n", metric, lowestMetric)
