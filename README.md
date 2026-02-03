@@ -63,6 +63,10 @@ Please check our [contribution guideline](CONTRIBUTING.md).
 If you haven't previously signed the [Siemens Contributor License Agreement](https://cla-assistant.io/industrial-edge/) (CLA), the system will automatically prompt you to do so when you submit your Pull Request. This can be conveniently done through the CLA Assistant's online platform.
 Once the CLA is signed, your Pull Request will automatically be cleared and made ready for merging if all other test stages succeed.
 
-
 # How to be part of Siemens Industrial Edge Ecosystem
 Please check [this](https://new.siemens.com/global/en/products/automation/topic-areas/industrial-edge.html) page to learn more information about Industrial Edge.
+
+# Funding Acknowledgment
+
+Funded by the Federal Ministry for Economic Affairs and Energy based on a decision by the German Bundestag. Your funding provider: Kicks for Edge as part of the EU funding program IPCEI-CIS (FKZ:13IPC008)  
+<img src="./assets/images/funding_logo.png" width="33%">
