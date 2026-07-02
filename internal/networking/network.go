@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -12,6 +12,8 @@ import (
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/common"
+	"networkservice/internal/networking/factory"
 	"reflect"
 	"strings"
 
@@ -33,18 +35,16 @@ type Network interface {
 
 // NetworkConfigurator implements Network Interface.
 type NetworkConfigurator struct {
-	gnm nm.NetworkManager
+	gnm            nm.NetworkManager
+	gatewayManager GatewayHelper
 }
 
 // NewNetworkConfiguratorWithNM creates new NetworkConfigurator instance
-func NewNetworkConfiguratorWithNM(wifxNetworkManager nm.NetworkManager) *NetworkConfigurator {
-	return &NetworkConfigurator{gnm: wifxNetworkManager}
-}
-
-// NewNetworkConfigurator creates new NetworkConfigurator instance
-func NewNetworkConfigurator() *NetworkConfigurator {
-	val, _ := nm.NewNetworkManager()
-	return &NetworkConfigurator{gnm: val}
+func NewNetworkConfiguratorWithNM(networkManager nm.NetworkManager) *NetworkConfigurator {
+	return &NetworkConfigurator{
+		gnm:            networkManager,
+		gatewayManager: NewGatewayManager(networkManager),
+	}
 }
 
 //### PUBLIC FUNCTIONS
@@ -85,14 +85,14 @@ func (nc *NetworkConfigurator) IsGatewayInterface(mac string) bool {
 func (nc *NetworkConfigurator) findGatewayMAC(devices []nm.DeviceWired) string {
 	log.Println("Starting findGatewayMAC: Identifying the gateway MAC with the lowest metric.")
 
-	var lowestMetric uint8 = MaxMetricValue // Initialize with the highest possible metric value
+	var lowestMetric uint8 = common.MaxMetricValue // Initialize with the highest possible metric value
 	var gatewayMAC string
 
 	for _, device := range devices {
 		hwAddr, _ := device.GetPropertyHwAddress()
 		log.Printf("Processing device: MAC=%s\n", hwAddr)
 
-		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
+		mac, metric, err := nc.getDeviceGatewayIDAndMetric(device)
 		if err != nil {
 			log.Printf("Error fetching gateway MAC and metric for device: MAC=%s: %v\n", hwAddr, err)
 			continue
@@ -109,95 +109,99 @@ func (nc *NetworkConfigurator) findGatewayMAC(devices []nm.DeviceWired) string {
 	return gatewayMAC
 }
 
-func (nc *NetworkConfigurator) getDeviceGatewayMACAndMetric(device nm.DeviceWired) (string, uint8, error) {
+func (nc *NetworkConfigurator) getDeviceGatewayIDAndMetric(device nm.Device) (string, uint8, error) {
 	if device == nil {
-		log.Printf("Device is nil")
+		log.Printf("getDeviceGatewayIDAndMetric: device is nil")
 		return "", 0, fmt.Errorf("device is nil")
 	}
 
-	hwAddr, err := device.GetPropertyHwAddress()
-	if err != nil {
-		return "", 0, fmt.Errorf("Error retrieving device's MAC address: %v", err)
-	}
-
-	log.Printf("Starting getDeviceGatewayMACAndMetric for device: MAC=%s\n", hwAddr)
-
+	log.Printf("getDeviceGatewayIDAndMetric: fetching active connection")
 	conn, err := device.GetPropertyActiveConnection()
 	if err != nil || conn == nil {
-		log.Printf("No active connection for device: MAC=%s err=%v\n", hwAddr, err)
-		return "", 0, fmt.Errorf("no active connection for device")
+		log.Printf("getDeviceGatewayIDAndMetric: no active connection err=%v", err)
+		return "", 0, fmt.Errorf("no active connection")
 	}
-	log.Printf("Active connection retrieved for device: MAC=%s: %v\n", hwAddr, conn)
 
-	IPv4Wrapper, err := conn.GetPropertyIP4Config()
-	if err != nil || IPv4Wrapper == nil || (reflect.ValueOf(IPv4Wrapper).IsNil()) {
-		log.Printf("Failed to get IPv4 configuration for device: MAC=%s: %v\n", hwAddr, err)
+	ipv4, err := conn.GetPropertyIP4Config()
+	if err != nil || ipv4 == nil || reflect.ValueOf(ipv4).IsNil() {
+		log.Printf("getDeviceGatewayIDAndMetric: failed to get IPv4 config err=%v", err)
 		return "", 0, fmt.Errorf("failed to get IPv4 configuration")
 	}
-	log.Printf("IPv4 configuration retrieved for device: MAC=%s\n", hwAddr)
 
-	routeData, err := IPv4Wrapper.GetPropertyRouteData()
+	routeData, err := ipv4.GetPropertyRouteData()
 	if err != nil || routeData == nil {
-		log.Printf("Failed to get route data for device with MAC %s: %v\n", hwAddr, err)
+		log.Printf("getDeviceGatewayIDAndMetric: failed to get route data err=%v", err)
 		return "", 0, fmt.Errorf("failed to get route data")
 	}
-	log.Printf("Route data retrieved for device with MAC=%s\n", hwAddr)
-
-	for _, route := range routeData {
-		log.Printf("Inspecting route: Destination=%v, Prefix=%v, Metric=%v\n", route.Destination, route.Prefix, route.Metric)
-		if route.Destination == OutgoingRouteDestination && route.Prefix == OutgoingRoutePrefix {
-			return hwAddr, route.Metric, nil
-		}
-	}
-	log.Printf("No matching route found for device with MAC=%s\n", hwAddr)
-	return "", 0, fmt.Errorf("no matching route found")
+	return nc.inspectRoutesForGateway(device, routeData)
 }
 
-// GetEthernetInterfaces returns all Ethernet typed interfaces on a device.
-func (nc *NetworkConfigurator) GetEthernetInterfaces() []*v1.Interface {
-	log.Println("Starting GetEthernetInterfaces: Fetching all Ethernet interfaces.")
+func (nc *NetworkConfigurator) inspectRoutesForGateway(device nm.Device, routeData []nm.IP4RouteData) (string, uint8, error) {
+	for _, route := range routeData {
+		log.Printf("Inspecting route destination=%v prefix=%v metric=%v", route.Destination, route.Prefix, route.Metric)
+		if route.Destination == common.OutgoingRouteDestination && route.Prefix == common.OutgoingRoutePrefix {
+			deviceType, _ := device.GetPropertyDeviceType()
+			if deviceType == nm.NmDeviceTypeEthernet {
+				wired, err := nm.NewDeviceWired(device.GetPath())
+				if err != nil {
+					return "", 0, err
+				}
+				mac, err := wired.GetPropertyHwAddress()
+				if err != nil {
+					return "", 0, err
+				}
+				return mac, route.Metric, nil
+			}
+			log.Printf("Gateway identified via non-Ethernet device, no MAC available, metric=%d", route.Metric)
+			return "", route.Metric, nil
+		}
+	}
+	log.Printf("getDeviceGatewayIDAndMetric: no gateway route found")
+	return "", 0, fmt.Errorf("no matching gateway route found")
+}
 
-	devices := nc.getAllEthernetDevices()
-	log.Printf("Fetched %d Ethernet devices: %v\n", len(devices), devices)
+// GetNetworkInterfaces returns all network interfaces (Ethernet and Modem) on the device.
+func (nc *NetworkConfigurator) GetNetworkInterfaces() []*v1.Interface {
+
+	log.Println("GetNetworkInterfaces: collecting all network interfaces.")
+	devices := nc.getAllNetworkDevices()
+	log.Printf("Fetched %d devices: %v\n", len(devices), devices)
 
 	// Collect all interfaces into a slice.
 	var interfaces []*v1.Interface
 	for _, device := range devices {
-		hwAddr, _ := device.GetPropertyHwAddress()
-		log.Printf("Converting device with MAC=%s to proto representation.", hwAddr)
+		deviceType, _ := device.GetPropertyDeviceType()
+		log.Printf("Processing device with type: %v, path: %v", deviceType, device.GetPath())
 		proto := DBusToProto(device)
 		interfaces = append(interfaces, proto)
 	}
-
 	// Identify the gateway interface.
 	gatewayInterface := nc.findGatewayInterface(devices, interfaces)
 	if gatewayInterface != nil {
 		log.Printf("Gateway interface identified: %v\n", gatewayInterface)
 		gatewayInterface.GatewayInterface = true
 	}
-
 	log.Printf("Returning %d interfaces: %v\n", len(interfaces), interfaces)
 	return interfaces
 }
 
-// findGatewayInterface identifies the gateway interface with the lowest metric.
-func (nc *NetworkConfigurator) findGatewayInterface(devices []nm.DeviceWired, interfaces []*v1.Interface) *v1.Interface {
+func (nc *NetworkConfigurator) findGatewayInterface(devices []nm.Device, interfaces []*v1.Interface) *v1.Interface {
 	log.Println("Starting findGatewayInterface: Identifying gateway interface.")
 
-	var lowestMetric uint8 = MaxMetricValue // Initialize with the highest possible metric value
+	var lowestMetric uint8 = common.MaxMetricValue // Initialize with the highest possible metric value
 	var gatewayInterface *v1.Interface
 
 	for i, device := range devices {
-		hwAddr, _ := device.GetPropertyHwAddress()
-		log.Printf("Processing device at index %d: MAC=%s\n", i, hwAddr)
+		deviceInterface, _ := device.GetPropertyInterface()
+		log.Printf("Processing device at index %d: device's interface name=%s\n", i, deviceInterface)
 
-		mac, metric, err := nc.getDeviceGatewayMACAndMetric(device)
+		_, metric, err := nc.getDeviceGatewayIDAndMetric(device)
 		if err != nil {
-			log.Printf("Error fetching gateway MAC and metric for device with MAC=%s: %v\n", hwAddr, err)
+			log.Printf("Error fetching gateway MAC and metric for device with device's interface name=%s: %v\n", deviceInterface, err)
 			continue
 		}
 
-		log.Printf("Device with MAC %s has metric %d and MAC %v\n", hwAddr, metric, mac)
+		log.Printf("Device with Interface %s has metric %d and Interface %v\n", deviceInterface, metric, deviceInterface)
 
 		if metric < lowestMetric {
 			log.Printf("New lowest metric found: %d (previous: %d). Updating gateway interface.\n", metric, lowestMetric)
@@ -218,36 +222,153 @@ func (nc *NetworkConfigurator) ArePreconditionsOk(newSettings *v1.NetworkSetting
 
 // Apply Applies given settings, if any error occures all Interfaces in system will be restored to original states.
 func (nc *NetworkConfigurator) Apply(newSettings *v1.NetworkSettings) error {
-	log.Println("new settings request -- ", newSettings)
-	var backups []nm.ConnectionSettings
+	log.Println("Request to apply new network settings...")
+	log.Printf("Received network settings payload: %v", newSettings)
 
-	//iterate through all interfaces in given new Settings
-	for _, element := range newSettings.Interfaces {
+	var hasError bool
 
-		//try APPLY new settings to each network interface
-		backup, err := nc.applyAndBackupSettings(element)
+	existingIfaces := nc.GetNetworkInterfaces()
 
-		//add backup if any active connections exists before
-		if backup != nil {
-			backups = append(backups, backup)
-			log.Println("backup  : > ", backup)
+	// Create a new interface state handler for this Apply call.
+	// A fresh handler is instantiated on each invocation to ensure
+	// backup and restore operations are isolated per Apply execution.
+	ifaceHandler := NewInterfaceStateHandler(nc.gnm, existingIfaces)
+
+	if err := ifaceHandler.Backup(); err != nil {
+		log.Println("Failed to backup existing interface states: ", err)
+		return err
+	}
+
+	defer func() {
+		if hasError {
+			ifaceHandler.Restore()
 		}
-		//if any error occurs, all interfaces will be RESTOREd to original
-		if err != nil {
-			log.Println("applying new settings failed for:", err)
-			log.Println("Restoring all settings:")
-			for _, data := range backups {
-				if data != nil {
-					_ = nc.restoreConnection(data)
+	}()
 
-				}
-			}
-			//return error to caller since new settings could not apply,but restored.
+	newIfaces := newSettings.GetInterfaces()
+	for _, iface := range newIfaces {
+
+		// Skip unconfigured interfaces (e.g., disconnected Ethernet with no DHCP and no static IP).
+		if !isInterfaceConfigured(iface) {
+			log.Printf("Skipping unconfigured interface: %s (no DHCP and no static IP)", iface.GetInterfaceName())
+			continue
+		}
+
+		// For each interface supplied to this Apply call, create a new configurator instance
+		// based on its type (Ethernet or GSM). Each configurator is created fresh for this
+		// Apply invocation and is responsible for configuring its respective interface independently.
+		configurator, err := NewInterfaceConfigurator(nc, iface)
+		if err != nil {
+			log.Println("Failed to init configurator: ", err)
+			hasError = true
+			return err
+		}
+
+		if err := configurator.Configure(); err != nil {
+			log.Println("Failed to apply new settings:", err)
+			hasError = true
 			return err
 		}
 	}
-	log.Println("all interface(s) configured successfully")
+
+	if err := nc.resetGateway(existingIfaces, newIfaces); err != nil {
+		log.Println("Failed to reset gateway settings:", err)
+		hasError = true
+		return err
+	}
+
+	log.Println("New network settings applied successfully.")
 	return nil
+}
+
+func (nc *NetworkConfigurator) resetGateway(existingIfaces, newIfaces []*v1.Interface) error {
+	deviceName := nc.findGatewayToReset(existingIfaces, newIfaces)
+	if len(deviceName) == 0 {
+		return nil
+	}
+	return nc.gatewayManager.Reset(deviceName)
+}
+
+func (nc *NetworkConfigurator) findGatewayToReset(existingIfaces, incomingIfaces []*v1.Interface) string {
+	incomingGateway := nc.findGateway(incomingIfaces)
+	if incomingGateway == nil {
+		log.Println("No new gateway interface specified. No need to reset gateway settings.")
+		return ""
+	}
+
+	existingGateway := nc.findGateway(existingIfaces)
+	if existingGateway == nil {
+		log.Println("No previous gateway interface found. No need to reset gateway settings.")
+		return ""
+	}
+
+	if nc.isGatewayChanged(existingGateway, incomingGateway) {
+		log.Println("Gateway interface changed. Need to reset gateway settings.")
+		return existingGateway.GetInterfaceName()
+	}
+
+	log.Println("No changes to gateway interface detected. No need to reset gateway settings.")
+	return ""
+}
+
+// For existing interfaces, assuming that there is maximum one gateway interface.
+// Although unlikely, if multiple gateway interfaces do exist, only the first one found will be returned.
+// For incoming interfaces, if multiple interfaces are marked as gateway, the validation should catch it before.
+func (nc *NetworkConfigurator) findGateway(ifaces []*v1.Interface) *v1.Interface {
+	for _, iface := range ifaces {
+		if iface.GetGatewayInterface() {
+			return iface
+		}
+	}
+	return nil
+}
+
+func (nc *NetworkConfigurator) isGatewayChanged(existingGateway, incomingGateway *v1.Interface) bool {
+	existingGatewayIsGSM := isGSMInterface(existingGateway)
+	incomingGatewayIsGSM := isGSMInterface(incomingGateway)
+
+	if existingGatewayIsGSM && incomingGatewayIsGSM {
+		log.Println("Both existing and incoming gateway interfaces are GSM. Comparing GSM settings to determine if gateway has changed...")
+		return !gsmInterfaceMatches(existingGateway, incomingGateway)
+	} else if !existingGatewayIsGSM && !incomingGatewayIsGSM {
+		log.Println("Both existing and incoming gateway interfaces are Ethernet. Comparing Ethernet settings to determine if gateway has changed...")
+		return !ethernetInterfaceMatches(existingGateway, incomingGateway)
+	} else {
+		log.Println("Existing and incoming gateway interfaces are of different types. Gateway has changed.")
+		return true
+	}
+}
+
+func (nc *NetworkConfigurator) restoreEthernetConnection(backup nm.ConnectionSettings) error {
+	var mac net.HardwareAddr
+	mac = backup[common.EthernetType][common.MACAddressKey].([]byte)
+
+	err := nc.addConnection(mac.String(), backup)
+	if err != nil {
+		log.Printf("restoreEthernetConnection failed for mac: %v", mac)
+		return err
+	} else {
+		log.Printf("restoreEthernetConnection success for mac: %v", mac)
+		return nil
+	}
+}
+
+func (nc *NetworkConfigurator) CreateConnection(newSettings *v1.ConnectionSettings) error {
+	connType := newSettings.ConnectionType
+	conn := factory.ConnectionFactory(connType, nc.gnm)
+	if conn == nil {
+		return fmt.Errorf("unsupported connection type: %v", connType)
+	}
+	return conn.CreateConnection(newSettings)
+}
+
+func (nc *NetworkConfigurator) RemoveConnection(newSettings *v1.ConnectionSettings) error {
+	connType := newSettings.ConnectionType
+	conn := factory.ConnectionFactory(connType, nc.gnm)
+	if conn == nil {
+		return fmt.Errorf("unsupported connection type: %v", connType)
+	}
+	return conn.RemoveConnection(newSettings)
 }
 
 //### PRIVATE functions
@@ -294,38 +415,52 @@ func (nc *NetworkConfigurator) getAllEthernetDevices() []nm.DeviceWired {
 	list, _ := nc.gnm.GetDevices()
 
 	for _, device := range list {
-		deviceType, _ := device.GetPropertyDeviceType()
+		if device == nil {
+			log.Println("Skipping nil device from NetworkManager")
+			continue
+		}
+		deviceType, err := device.GetPropertyDeviceType()
+		if err != nil {
+			log.Printf("Error getting device type: %v\n", err)
+			continue
+		}
 		if deviceType == nm.NmDeviceTypeEthernet {
-			wired, _ := nm.NewDeviceWired(device.GetPath())
+			wired, err := nm.NewDeviceWired(device.GetPath())
+			if err != nil {
+				log.Printf("Error creating DeviceWired: %v\n", err)
+				continue
+			}
 			foundEthernetDevices = append(foundEthernetDevices, wired)
 		}
 	}
 	return foundEthernetDevices
 }
 
-// applyAndBackupSettings applies the provided network settings to the device
-// and creates a backup of the existing settings before applying the new ones.
-func (nc *NetworkConfigurator) applyAndBackupSettings(protoData *v1.Interface) (nm.ConnectionSettings, error) {
-	device, err := nc.getDeviceBy(protoData)
+// getAllNetworkDevices retrieves all supported network devices from NetworkManager.
+// It returns Ethernet devices as wired devices and Modem (GSM/LTE) devices as generic devices
+func (nc *NetworkConfigurator) getAllNetworkDevices() []nm.Device {
+	var foundNetworkDevices []nm.Device
+	list, err := nc.gnm.GetDevices()
 	if err != nil {
-		return nil, err
+		log.Println("Failed to get devices: ", err)
+		return nil
 	}
-
-	backup := nc.createBackupFromExisting(device)
-	settings, err := nc.prepareSettings(protoData, device)
-	if err != nil {
-		return backup, err
+	for _, device := range list {
+		if device == nil {
+			log.Println("Skipping nil device from NetworkManager")
+			continue
+		}
+		deviceType, err := device.GetPropertyDeviceType()
+		if err != nil {
+			log.Printf("Error getting device type: %v\n", err)
+			continue
+		}
+		if deviceType == nm.NmDeviceTypeEthernet || deviceType == nm.NmDeviceTypeModem {
+			log.Printf("Found supported device type: %v", deviceType)
+			foundNetworkDevices = append(foundNetworkDevices, device)
+		}
 	}
-
-	if err := nc.updateConnections(device, settings); err != nil {
-		return backup, err
-	}
-
-	if err := ConfigureExistingGatewayInterfacesExceptProtoData(protoData, *nc); err != nil {
-		return backup, err
-	}
-
-	return backup, nil
+	return foundNetworkDevices
 }
 
 // getDeviceBy retrieves the Ethernet device based on the provided protoData,
@@ -344,22 +479,42 @@ func (nc *NetworkConfigurator) getDeviceBy(protoData *v1.Interface) (nm.DeviceWi
 func (nc *NetworkConfigurator) prepareSettings(protoData *v1.Interface, device nm.DeviceWired) (nm.ConnectionSettings, error) {
 	deviceName, err := device.GetPropertyInterface()
 	if err != nil {
+		log.Println("Failed to get device interface name: ", err)
 		return nil, err
 	}
 	return newSettingsFromProto(protoData, deviceName), nil
+}
+
+// getAllConnections retrieves all saved NetworkManager connections.
+func (nc *NetworkConfigurator) getAllConnections() ([]nm.Connection, error) {
+	settings, err := nm.NewSettings()
+	if err != nil {
+		log.Println("Failed to create settings manager: ", err)
+		return nil, err
+	}
+
+	// List all saved NM connections
+	connections, err := settings.ListConnections()
+	if err != nil {
+		log.Println("Failed to list connections: ", err)
+		return nil, err
+	}
+
+	return connections, err
 }
 
 // updateConnections updates the connections for the given Ethernet device
 // by deleting old connections and adding the new settings.
 func (nc *NetworkConfigurator) updateConnections(device nm.DeviceWired, settings nm.ConnectionSettings) error {
 	connections := listConnections(device)
+
 	if err := nc.deleteOldConnections(connections); err != nil {
-		log.Println("could not delete connection: ", err)
 		return err
 	}
 
 	mac, err := device.GetPropertyHwAddress()
 	if err != nil {
+		log.Println("Failed to get MAC address of device: ", err)
 		return err
 	}
 
@@ -371,39 +526,17 @@ func (nc *NetworkConfigurator) updateConnections(device nm.DeviceWired, settings
 // from the wired device, parses it into a MAC address, and sets it in the backup.
 // This is necessary to correctly restore the connection settings if needed.
 func setMACAddressInBackup(backup nm.ConnectionSettings, wired nm.DeviceWired) error {
-	if backup[EthernetType][MACAddressKey] == nil {
+	if backup[common.EthernetType][common.MACAddressKey] == nil {
 		retValue, _ := wired.GetPropertyPermHwAddress()
 		macAddr, err := net.ParseMAC(retValue)
 		if err == nil {
-			backup[EthernetType][MACAddressKey] = []uint8(macAddr)
+			backup[common.EthernetType][common.MACAddressKey] = []uint8(macAddr)
 			return nil
 		} else {
 			return err
 		}
 	}
 	return nil
-}
-
-// createBackupFromExisting creates a backup of the existing connection settings
-// for the given Ethernet device.
-func (nc *NetworkConfigurator) createBackupFromExisting(wired nm.DeviceWired) nm.ConnectionSettings {
-
-	list := listConnections(wired)
-
-	if list == nil || len(list) < 1 {
-		log.Printf("there is not any connection found on device to create backup ")
-		return nil
-	} else {
-		backup, _ := list[0].GetSettings()
-		err := setMACAddressInBackup(backup, wired)
-		if err != nil {
-			log.Println("Cannot create backup, parse mac address error: ", err)
-		}
-		log.Println("created backup for existing connection")
-		// new settings instance needed to be ready for applying backup
-		log.Println(backup)
-		return retrieveSettingsFromBackup(backup)
-	}
 }
 
 // addConnection adds a new connection with the provided settings to the Ethernet device
@@ -419,23 +552,10 @@ func (nc *NetworkConfigurator) addConnection(mac string, settings nm.ConnectionS
 		if aErr != nil {
 			log.Println("configuration applied,but could not activated since: ", aErr)
 		}
+	} else {
+		log.Printf("Failed to add connection for device %v: %v", mac, err)
 	}
 	return err
-}
-
-// restoreConnection restores the connection settings from the provided backup.
-func (nc *NetworkConfigurator) restoreConnection(backup nm.ConnectionSettings) error {
-	var mac net.HardwareAddr
-	mac = backup[EthernetType][MACAddressKey].([]byte)
-
-	err := nc.addConnection(mac.String(), backup)
-	if err != nil {
-		log.Printf("rostoreConnection failed for mac: %v", mac)
-		return err
-	} else {
-		log.Printf("rostoreConnection success for mac: %v", mac)
-		return nil
-	}
 }
 
 // deleteOldConnections deletes all old connections from the provided list of connections.

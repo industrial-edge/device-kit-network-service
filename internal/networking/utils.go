@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -10,10 +10,11 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/common"
+	"os"
 	"strings"
 	"time"
 
@@ -28,38 +29,20 @@ type dict map[string]interface{}
 // DBusDict Dictionary type
 type DBusDict map[string]dbus.Variant
 
-// Backup configuration can not applied to dbus! some fields needs to be removed Create a new connection
-// INSTANCE based on ipv4 and name from backup
-func retrieveSettingsFromBackup(backup nm.ConnectionSettings) nm.ConnectionSettings {
-	connection := make(nm.ConnectionSettings)
-	connection[ConnectionKey] = make(dict)
-	connection[IPV4Key] = make(dict)
-	connection[EthernetType] = make(dict)
-	connection[ConnectionKey][IDKey] = backup[ConnectionKey][IDKey]
-	connection[ConnectionKey][TypeKey] = backup[ConnectionKey][TypeKey]
-	connection[ConnectionKey][InterfaceNameKey] = backup[ConnectionKey][InterfaceNameKey]
-	connection[ConnectionKey][UUIDKey] = uuid.New().String()
-	connection[ConnectionKey][TimeStampKey] = time.Now().UnixNano()
-	connection[EthernetType] = backup[EthernetType]
-	connection[EthernetType][MACAddressKey] = backup[EthernetType][MACAddressKey]
-	connection[IPV4Key] = backup[IPV4Key]
-	return connection
-}
-
 func parseStaticIPConfig(connection nm.ConnectionSettings) *v1.Interface_StaticConf {
-	dict := connection[IPV4Key][AddressDataKey].([]map[string]interface{})
+	dict := connection[common.IPV4Key][common.AddressDataKey].([]map[string]interface{})
 
 	config := &v1.Interface_StaticConf{}
 	if len(dict) > 0 {
-		if dict[0][AddressKey] != nil {
-			config.IPv4 = dict[0][AddressKey].(string)
+		if dict[0][common.AddressKey] != nil {
+			config.IPv4 = dict[0][common.AddressKey].(string)
 		}
 
-		if dict[0][PrefixKey] != nil {
-			config.NetMask = ParseNetMask(dict[0][PrefixKey].(uint32))
+		if dict[0][common.PrefixKey] != nil {
+			config.NetMask = common.ParseNetMask(dict[0][common.PrefixKey].(uint32))
 		}
-		if connection[IPV4Key][GatewayKey] != nil {
-			config.Gateway = connection[IPV4Key][GatewayKey].(string)
+		if connection[common.IPV4Key][common.GatewayKey] != nil {
+			config.Gateway = connection[common.IPV4Key][common.GatewayKey].(string)
 		}
 
 	}
@@ -75,7 +58,7 @@ func parseDHCPIPv4Config(ipv4conf nm.IP4Config) *v1.Interface_StaticConf {
 		ipv4Address, _ := ipv4conf.GetPropertyAddressData()
 		if len(ipv4Address) > 0 {
 			config.IPv4 = ipv4Address[0].Address
-			config.NetMask = ParseNetMask(uint32(ipv4Address[0].Prefix))
+			config.NetMask = common.ParseNetMask(uint32(ipv4Address[0].Prefix))
 		}
 		config.Gateway, _ = ipv4conf.GetPropertyGateway()
 	}
@@ -105,7 +88,64 @@ func parseDns(dnsArray []nm.IP4NameserverData) *v1.Interface_Dns {
 	return dns
 }
 
-func listConnections(device nm.DeviceWired) []nm.Connection {
+// parseRoutes parses the route data from the connection settings into a slice
+// of Interface_Route.
+func parseRoutes(routeArray []map[string]any) []*v1.Interface_Route {
+	routes := []*v1.Interface_Route{}
+
+	for _, routeEntry := range routeArray {
+		route := parseRoute(routeEntry)
+		routes = append(routes, route)
+	}
+
+	return routes
+}
+
+// parseRoute parses a single route entry from the connection settings.
+// Like the rest of the connection settings parsing functions, it expects the
+// route data to be in a specific format, which is a slice of maps with
+// specific keys for destination, prefix, next hop, and metric and valid
+// values: mandatory destination and prefix, and optional next hop and metric.
+func parseRoute(routeEntry map[string]any) *v1.Interface_Route {
+	getString := func(val any, key string) string {
+		if val == nil {
+			return ""
+		}
+		s, ok := val.(string)
+		if !ok {
+			log.Printf("Failed to cast %s to string: %v", key, val)
+			return ""
+		}
+		return s
+	}
+
+	getUint32 := func(val any, key string) uint32 {
+		if val == nil {
+			return 0
+		}
+		u, ok := val.(uint32)
+		if !ok {
+			log.Printf("Failed to cast %s to uint32: %v", key, val)
+			return 0
+		}
+		return u
+	}
+
+	dst := getString(routeEntry[common.DestinationKey], common.DestinationKey)
+	prefix := getUint32(routeEntry[common.PrefixKey], common.PrefixKey)
+	nextHop := getString(routeEntry[common.NextHopKey], common.NextHopKey)
+	metric := getUint32(routeEntry[common.MetricKey], common.MetricKey)
+	dstLen := net.IPv4len * 8
+
+	return &v1.Interface_Route{
+		Destination: dst,
+		Netmask:     net.IP(net.CIDRMask(int(prefix), dstLen)).String(),
+		NextHop:     nextHop,
+		Metric:      metric,
+	}
+}
+
+func listConnections(device nm.Device) []nm.Connection {
 	var connections []nm.Connection
 
 	interfaceName, err := device.GetPropertyInterface()
@@ -152,12 +192,14 @@ func getActiveConnectionDetails(activeConnection nm.ActiveConnection) (string, s
 
 func isValidConnection(connection nm.Connection, name, activeConnectionUUID, activeConnectionID string) bool {
 	settings, _ := connection.GetSettings()
-	interfaceName := settings[ConnectionKey][InterfaceNameKey]
-	connectionType := settings[ConnectionKey][TypeKey]
-	connectionUUID := settings[ConnectionKey][UUIDKey]
-	connectionID := settings[ConnectionKey][IDKey]
+	interfaceName := settings[common.ConnectionKey][common.InterfaceNameKey]
+	connectionType := settings[common.ConnectionKey][common.TypeKey]
+	connectionUUID := settings[common.ConnectionKey][common.UUIDKey]
+	connectionID := settings[common.ConnectionKey][common.IDKey]
 
-	if connectionType != EthernetType {
+	// This is an important check to ensure that this method and its callers
+	// only process Ethernet connections.
+	if connectionType != common.EthernetType {
 		return false
 	}
 
@@ -168,46 +210,117 @@ func isValidConnection(connection nm.Connection, name, activeConnectionUUID, act
 	return connectionUUID == activeConnectionUUID && connectionID == activeConnectionID
 }
 
-func DBusToProto(device nm.DeviceWired) *v1.Interface {
+func DBusToProto(device nm.Device) (retVal *v1.Interface) {
 	if device == nil {
 		return nil
 	}
 
-	//gnm,_:=nm.NewNetworkManager()
 	var values nm.ConnectionSettings
-	var retVal *v1.Interface
 	var allConnections []nm.Connection
+	var mac string
 
-	conn, err := device.GetPropertyActiveConnection()
-	allConnections = listConnections(device)
-
-	mac, _ := device.GetPropertyHwAddress()
 	deviceName, _ := device.GetPropertyInterface()
-
-	if err == nil && conn != nil {
-		IPv4Wrapper, _ := conn.GetPropertyIP4Config()
-		props, _ := conn.GetPropertyConnection()
-		values, _ = props.GetSettings()
-		retVal = convertToProto(values, IPv4Wrapper, mac)
-	} else if allConnections != nil && len(allConnections) > 0 {
-		values, _ = allConnections[0].GetSettings()
-		retVal = convertToProto(values, nil, mac)
-	} else {
-		retVal = &v1.Interface{MacAddress: mac, Label: deviceName}
+	deviceType, _ := device.GetPropertyDeviceType()
+	var connectionType v1.Interface_InterfaceTypeEnum
+	// Only Ethernet devices expose a reliable MAC via NetworkManager's wired device API.
+	if deviceType == nm.NmDeviceTypeEthernet {
+		var err error
+		wired, errWired := toDeviceWired(device.GetPath())
+		if errWired != nil {
+			log.Printf("Error creating wired: %v", errWired)
+		}
+		mac, err = wired.GetPropertyHwAddress()
+		if err != nil {
+			log.Printf("Error getting hardware address: %v", err)
+		}
+		connectionType = v1.Interface_ETHERNET
 	}
 
-	// get device interface name
-	interfaceName, _ := device.GetPropertyInterface()
-	log.Println("interfacename :", interfaceName)
+	if deviceType == nm.NmDeviceTypeModem {
+		connectionType = v1.Interface_GSM
+	}
+	conn, err := device.GetPropertyActiveConnection()
+	allConnections = listConnections(device)
+	if err == nil && conn != nil {
+		log.Printf("Found active connection for device: %s", deviceName)
+		ipv4, _ := conn.GetPropertyIP4Config()
+		props, _ := conn.GetPropertyConnection()
+		values, _ = props.GetSettings()
+		retVal = convertToProto(values, ipv4, mac)
 
-	// get layer2 config from device
-	l2device := dockerNetworkGetMacvlanConnection(interfaceName)
-	retVal.L2Conf = l2device
+	} else if len(allConnections) > 0 {
+		log.Printf("Found %d active connections for device: %s", len(allConnections), deviceName)
+		values, _ = allConnections[0].GetSettings()
+		retVal = convertToProto(values, nil, mac)
 
-	retVal.InterfaceName = interfaceName
-	retVal.Label, _ = getLabelForInterface(interfaceName)
+	} else {
+		log.Printf("No active connections for device: %s", deviceName)
+		retVal = &v1.Interface{
+			MacAddress:    mac,
+			InterfaceName: deviceName,
+		}
+	}
+
+	// Common fields
+	retVal.InterfaceName = deviceName
+	retVal.Label, _ = getLabelForInterface(deviceName)
+	retVal.InterfaceType = &connectionType // e.g., "ethernet" or "gsm"
+
+	// L2Conf is derived from Docker macvlan and is only applicable for Ethernet interfaces here.
+	if deviceType == nm.NmDeviceTypeEthernet {
+		retVal.L2Conf = dockerNetworkGetMacvlanConnection(deviceName)
+	}
+
+	// GSM-specific config
+	if deviceType == nm.NmDeviceTypeModem {
+		retVal.GsmConfiguration = extractGsmConf(values)
+	}
 
 	return retVal
+}
+
+func toDeviceWired(objectPath dbus.ObjectPath) (nm.DeviceWired, error) {
+	return nm.NewDeviceWired(objectPath)
+}
+
+func extractGsmConf(values nm.ConnectionSettings) *v1.Interface_GsmConf {
+	gsm, ok := values[common.GSMSetting]
+	if !ok {
+		return nil
+	}
+
+	conf := &v1.Interface_GsmConf{}
+
+	// APN is NOT masked
+	if v, ok := gsm[common.APNKey].(string); ok {
+		conf.Apn = v
+	}
+
+	// Sensitive fields → masked
+	//the gonetworkmanager library (v2.2.0) does not deliver back any key for PIN and PASSWORD ,
+	// so this maskValue is just a safety mechanism in case this changes
+	if v, ok := gsm[common.PINKey].(string); ok {
+		conf.Pin = maskValue(v)
+	}
+
+	if v, ok := gsm[common.UsernameKey].(string); ok {
+		conf.Username = v
+	}
+
+	if v, ok := gsm[common.PasswordKey].(string); ok {
+		conf.Password = maskValue(v)
+	}
+
+	return conf
+}
+
+//
+
+func maskValue(v string) string {
+	if v == "" {
+		return ""
+	}
+	return "****"
 }
 
 // Converts DBus data (nm.ConnectionSettings) to Device Model Proto
@@ -216,17 +329,27 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 	retVal := &v1.Interface{}
 	retVal.MacAddress = strings.ToUpper(mac)
 
-	if connection[IPV4Key][MethodKey] == Auto {
-		retVal.DHCP = Enabled
+	if connection[common.IPV4Key][common.MethodKey] == common.Auto {
+		retVal.DHCP = common.Enabled
 		retVal.Static = parseDHCPIPv4Config(ipv4Config)
 	} else {
 		retVal.Static = parseStaticIPConfig(connection)
-		retVal.DHCP = Disabled
+		retVal.DHCP = common.Disabled
 	}
 
 	if ipv4Config != nil {
 		dnsArray, _ := ipv4Config.GetPropertyNameserverData()
 		retVal.DNSConfig = parseDns(dnsArray)
+	}
+
+	if ipv4, have := connection[common.IPV4Key]; have {
+		if rawRouteData, have := ipv4[common.RouteDataKey]; have {
+			if routeData, ok := rawRouteData.([]map[string]any); ok {
+				retVal.Routes = parseRoutes(routeData)
+			} else {
+				log.Println("failed to cast routes:", mac)
+			}
+		}
 	}
 
 	return retVal
@@ -246,24 +369,26 @@ func newSettingsFromProto(protoData *v1.Interface, deviceName string) nm.Connect
 
 // determineIpAssignmentMethod determines the connection suffix based on the protoData.
 func determineIpAssignmentMethod(protoData *v1.Interface) string {
-	if protoData.DHCP == Enabled {
-		return DHCP
+	if protoData.DHCP == common.Enabled {
+		return common.DHCP
 	}
-	return Static
+	return common.Static
 }
 
 // applyConnectionSetting applies the connection settings.
 func applyConnectionSetting(connectionSuffix string, protoData *v1.Interface, connection nm.ConnectionSettings) {
 	if protoData.GatewayInterface {
-		connection[IPV4Key][RouteMetricKey] = 1
+		connection[common.IPV4Key][common.RouteMetricKey] = 1
 	}
-	if connectionSuffix == DHCP {
+	if connectionSuffix == common.DHCP {
 		putDHCP(connection)
 	} else {
 		putStaticIP(protoData, connection)
 	}
 
 	putDNSConfig(protoData, connection)
+
+	putExtraRoutes(protoData, connection)
 }
 
 // ConfigureExistingGatewayInterfacesExceptProtoData sets the route metric for all Ethernet device connections
@@ -330,7 +455,7 @@ func checkAndUpdateGatewayInterfaceForConnection(connection nm.Connection, proto
 		return fmt.Errorf("failed to get settings for connection: %w", err)
 	}
 
-	if settings[EthernetType][MACAddressKey] == nil {
+	if settings[common.EthernetType][common.MACAddressKey] == nil {
 		if err := setMacAddressInSettings(settings, ethernetDevice); err != nil {
 			return err
 		}
@@ -354,11 +479,14 @@ func checkAndUpdateGatewayInterfaceForConnection(connection nm.Connection, proto
 // by retrieving the permanent hardware address from the Ethernet device.
 func setMacAddressInSettings(settings nm.ConnectionSettings, ethernetDevice nm.DeviceWired) error {
 	retValue, _ := ethernetDevice.GetPropertyPermHwAddress()
+	if retValue == "" {
+		retValue, _ = ethernetDevice.GetPropertyHwAddress()
+	}
 	macAddr, err := net.ParseMAC(retValue)
 	if err != nil {
 		return err
 	}
-	settings[EthernetType][MACAddressKey] = []uint8(macAddr)
+	settings[common.EthernetType][common.MACAddressKey] = []uint8(macAddr)
 	return nil
 }
 
@@ -368,7 +496,7 @@ func willGatewayInterfaceBeUpdated(protoData *v1.Interface, macStr string, setti
 	if protoData.MacAddress != "" {
 		return strings.ToUpper(protoData.MacAddress) != macStr
 	} else if protoData.Label != "" {
-		return strings.ToLower(getInterfaceForLabel(protoData.Label)) != settings[ConnectionKey][InterfaceNameKey]
+		return strings.ToLower(getInterfaceForLabel(protoData.Label)) != settings[common.ConnectionKey][common.InterfaceNameKey]
 	}
 	return false
 }
@@ -376,7 +504,7 @@ func willGatewayInterfaceBeUpdated(protoData *v1.Interface, macStr string, setti
 // getMacAddressFromSettings retrieves the MAC address from the connection settings
 // and returns it as a formatted string.
 func getMacAddressFromSettings(settings nm.ConnectionSettings) string {
-	mac := settings[EthernetType][MACAddressKey].([]byte)
+	mac := settings[common.EthernetType][common.MACAddressKey].([]byte)
 	macStr := fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
 
 	return strings.ToUpper(macStr)
@@ -385,7 +513,7 @@ func getMacAddressFromSettings(settings nm.ConnectionSettings) string {
 // changePriorityOfGatewayInterface updates the route metric in the connection settings
 // and removes IPv6 addresses and routes. Logs the update process.
 func changePriorityOfGatewayInterface(settings nm.ConnectionSettings, connection nm.Connection) error {
-	settings[IPV4Key][RouteMetricKey] = int32(-1)
+	settings[common.IPV4Key][common.RouteMetricKey] = int32(-1)
 
 	delete(settings["ipv6"], "addresses")
 	delete(settings["ipv6"], "routes")
@@ -395,8 +523,8 @@ func changePriorityOfGatewayInterface(settings nm.ConnectionSettings, connection
 		return fmt.Errorf("failed to update connection: %w", err)
 	}
 
-	log.Printf("Connection ID: %v has been updated with Route Metric value: %v", settings[ConnectionKey][IDKey],
-		settings[IPV4Key][RouteMetricKey])
+	log.Printf("Connection ID: %v has been updated with Route Metric value: %v", settings[common.ConnectionKey][common.IDKey],
+		settings[common.IPV4Key][common.RouteMetricKey])
 
 	return nil
 }
@@ -404,32 +532,32 @@ func changePriorityOfGatewayInterface(settings nm.ConnectionSettings, connection
 // initializeConnectionSettings initializes the connection settings.
 func initializeConnectionSettings() nm.ConnectionSettings {
 	return nm.ConnectionSettings{
-		ConnectionKey: make(dict),
-		IPV4Key:       make(dict),
-		EthernetType:  make(dict),
+		common.ConnectionKey: make(dict),
+		common.IPV4Key:       make(dict),
+		common.EthernetType:  make(dict),
 	}
 }
 
 // putDHCP puts the DHCP configuration.
 func putDHCP(connection nm.ConnectionSettings) {
-	connection[IPV4Key][MethodKey] = Auto
+	connection[common.IPV4Key][common.MethodKey] = common.Auto
 }
 
 // putStaticIP puts the static IP configuration.
 func putStaticIP(protoData *v1.Interface, connection nm.ConnectionSettings) {
-	connection[IPV4Key][MethodKey] = Manual
+	connection[common.IPV4Key][common.MethodKey] = common.Manual
 	if protoData.Static != nil {
 		if protoData.Static.Gateway != "" {
-			connection[IPV4Key][GatewayKey] = protoData.Static.Gateway
+			connection[common.IPV4Key][common.GatewayKey] = protoData.Static.Gateway
 		}
 		address := dbus.MakeVariantWithSignature(protoData.Static.IPv4, dbus.ParseSignatureMust("s"))
-		prefix := dbus.MakeVariantWithSignature(ParseNetMaskSize(protoData.Static.NetMask), dbus.ParseSignatureMust("u"))
+		prefix := dbus.MakeVariantWithSignature(common.ParseNetMaskSize(protoData.Static.NetMask), dbus.ParseSignatureMust("u"))
 
 		ipDict := make(DBusDict)
-		ipDict[AddressKey] = address // IP address, e.g: "192.168.0.1"
-		ipDict[PrefixKey] = prefix   // Subnet, e.g: 24
+		ipDict[common.AddressKey] = address // IP address, e.g: "192.168.0.1"
+		ipDict[common.PrefixKey] = prefix   // Subnet, e.g: 24
 
-		connection[IPV4Key][AddressDataKey] = []DBusDict{ipDict}
+		connection[common.IPV4Key][common.AddressDataKey] = []DBusDict{ipDict}
 	}
 }
 
@@ -438,19 +566,80 @@ func putDNSConfig(protoData *v1.Interface, connection nm.ConnectionSettings) {
 	if protoData.DNSConfig != nil {
 		var dns1, dns2 uint32
 		if len(protoData.DNSConfig.PrimaryDNS) > 0 {
-			dns1 = IPToUInt32LI(protoData.DNSConfig.PrimaryDNS)
-			connection[IPV4Key][DNSKey] = []uint32{dns1}
+			dns1 = common.IPToUInt32LI(protoData.DNSConfig.PrimaryDNS)
+			connection[common.IPV4Key][common.DNSKey] = []uint32{dns1}
 
 			if len(protoData.DNSConfig.SecondaryDNS) > 0 {
-				dns2 = IPToUInt32LI(protoData.DNSConfig.SecondaryDNS)
-				connection[IPV4Key][DNSKey] = []uint32{dns1, dns2}
+				dns2 = common.IPToUInt32LI(protoData.DNSConfig.SecondaryDNS)
+				connection[common.IPV4Key][common.DNSKey] = []uint32{dns1, dns2}
 			}
 		}
 
-		if protoData.DHCP == Enabled {
-			connection[IPV4Key][DNSIgnoreAutoKey] = Yes
+		if protoData.DHCP == common.Enabled {
+			connection[common.IPV4Key][common.DNSIgnoreAutoKey] = common.Yes
 		}
 	}
+}
+
+// putExtraRoutes puts additional IPv4 routes into the connection settings.
+// It expects the route data in protoData has already been validated and in
+// the correct format.
+func putExtraRoutes(protoData *v1.Interface, connection nm.ConnectionSettings) {
+	var routes []DBusDict
+
+	for _, protoRoute := range protoData.GetRoutes() {
+		route := buildRouteDict(protoRoute)
+		routes = append(routes, route)
+	}
+
+	if len(routes) > 0 {
+		ipv4Map := connection[common.IPV4Key]
+		if ipv4Map == nil {
+			ipv4Map = make(map[string]any)
+			connection[common.IPV4Key] = ipv4Map
+		}
+		ipv4Map[common.RouteDataKey] = routes
+	}
+}
+
+// buildRouteDict creates a DBusDict for a single route. It expects protoRoute
+// to have been validated beforehand and contain the necessary fields.
+func buildRouteDict(protoRoute *v1.Interface_Route) DBusDict {
+	route := make(DBusDict)
+
+	setRouteDestination(route, protoRoute.GetDestination())
+	setRoutePrefix(route, protoRoute.GetNetmask())
+	setRouteNextHop(route, protoRoute.GetNextHop())
+	setRouteMetric(route, protoRoute.GetMetric())
+
+	return route
+}
+
+// setRouteDestination sets the destination IP address for the route. It expects
+// the destination to be a valid IP address string.
+func setRouteDestination(route DBusDict, dst string) {
+	route["dest"] = dbus.MakeVariant(net.ParseIP(dst).String())
+}
+
+// setRoutePrefix sets the prefix size for the route. It expects the netmask to be
+// a valid CIDR notation string (e.g., "255.255.255.0")
+func setRoutePrefix(route DBusDict, netmask string) {
+	route["prefix"] = dbus.MakeVariant(common.ParseNetMaskSize(netmask))
+}
+
+// setRouteNextHop sets the next hop IP address for the route. It expects the next hop
+// to be empty or a valid IP address string. If the next hop is empty, it will not set this field.
+func setRouteNextHop(route DBusDict, nh string) {
+	if len(nh) > 0 {
+		if net.ParseIP(nh) != nil {
+			route["next-hop"] = dbus.MakeVariant(nh)
+		}
+	}
+}
+
+// setRouteMetric sets the metric for the route.
+func setRouteMetric(route DBusDict, metric uint32) {
+	route["metric"] = dbus.MakeVariant(metric)
 }
 
 // determineIdentifier determines the identifier for the connection ID.
@@ -466,22 +655,22 @@ func determineIdentifier(protoData *v1.Interface) string {
 
 // setConnectionDetails sets the connection ID, UUID, and timestamp.
 func setConnectionDetails(connection nm.ConnectionSettings, protoData *v1.Interface, identifier string, connectionSuffix string, deviceName string) {
-	connection[ConnectionKey][IDKey] = fmt.Sprintf("%s_%s", identifier, connectionSuffix)
-	connection[ConnectionKey][UUIDKey] = uuid.New().String()
-	connection[ConnectionKey][TimeStampKey] = time.Now().Unix()
-	connection[ConnectionKey][TypeKey] = EthernetType
-	connection[ConnectionKey][InterfaceNameKey] = deviceName
+	connection[common.ConnectionKey][common.IDKey] = fmt.Sprintf("%s_%s", identifier, connectionSuffix)
+	connection[common.ConnectionKey][common.UUIDKey] = uuid.New().String()
+	connection[common.ConnectionKey][common.TimeStampKey] = time.Now().Unix()
+	connection[common.ConnectionKey][common.TypeKey] = common.EthernetType
+	connection[common.ConnectionKey][common.InterfaceNameKey] = deviceName
 
 	putMACAddress(protoData, connection)
 }
 
-// putMACAddress puts the MAC address and sets the MACAddressKey.
+// putMACAddress puts the MAC address and sets the constants.MACAddressKey.
 func putMACAddress(protoData *v1.Interface, connection nm.ConnectionSettings) {
 	uintMac, err := net.ParseMAC(protoData.MacAddress)
 	if err != nil {
 		log.Printf("Error parsing MAC address: %v", err)
 	}
-	connection[EthernetType][MACAddressKey] = uintMac
+	connection[common.EthernetType][common.MACAddressKey] = uintMac
 }
 
 func GetMapWithUppercase(inputMap map[string]string) map[string]string {
@@ -497,7 +686,7 @@ func WriteMapToFile(mapToBeWritten map[string]string, fileName string) error {
 	buffer, err := json.Marshal(GetMapWithUppercase(mapToBeWritten))
 
 	if err == nil {
-		err = ioutil.WriteFile(fileName, buffer, 0666)
+		err = os.WriteFile(fileName, buffer, 0666) //ioutil.WriteFile(fileName, buffer, 0666)
 	}
 
 	return err
@@ -506,7 +695,7 @@ func WriteMapToFile(mapToBeWritten map[string]string, fileName string) error {
 func readMapFromFile(fileName string) (map[string]string, error) {
 
 	var parsedMap map[string]string
-	buffer, err := ioutil.ReadFile(fileName)
+	buffer, err := os.ReadFile(fileName) //ioutil.ReadFile(fileName)
 
 	if err == nil {
 		err = json.Unmarshal(buffer, &parsedMap)
@@ -517,7 +706,7 @@ func readMapFromFile(fileName string) (map[string]string, error) {
 
 func getInterfaceForLabel(label string) string {
 	var interfaceName string
-	labelMap, err := readMapFromFile(LabelMapFileName)
+	labelMap, err := readMapFromFile(common.LabelMapFileName)
 
 	if err == nil {
 		interfaceName = labelMap[strings.ToUpper(label)]
@@ -529,7 +718,7 @@ func getInterfaceForLabel(label string) string {
 }
 
 func getLabelForInterface(interfaceName string) (string, error) {
-	labelMap, err := readMapFromFile(LabelMapFileName)
+	labelMap, err := readMapFromFile(common.LabelMapFileName)
 	if err != nil {
 		return "", fmt.Errorf("failed to read label map from file: %w", err)
 	}
@@ -542,4 +731,57 @@ func getLabelForInterface(interfaceName string) (string, error) {
 	}
 
 	return "", fmt.Errorf("interface not found: %s", interfaceName)
+}
+
+func isGSMInterface(iface *v1.Interface) bool {
+	return iface.GetGsmConfiguration() != nil || iface.GetInterfaceType() == v1.Interface_GSM
+}
+
+func gsmInterfaceMatches(i1 *v1.Interface, i2 *v1.Interface) bool {
+	apn1 := i1.GetGsmConfiguration().GetApn()
+	apn2 := i2.GetGsmConfiguration().GetApn()
+
+	username1 := i1.GetGsmConfiguration().GetUsername()
+	username2 := i2.GetGsmConfiguration().GetUsername()
+
+	return apn1 == apn2 && username1 == username2
+}
+
+func ethernetInterfaceMatches(i1 *v1.Interface, i2 *v1.Interface) bool {
+	mac1 := strings.ToUpper(i1.GetMacAddress())
+	mac2 := strings.ToUpper(i2.GetMacAddress())
+
+	label1 := strings.ToLower(i1.GetLabel())
+	label2 := strings.ToLower(i2.GetLabel())
+
+	return (mac2 != "" && mac1 == mac2) || (label2 != "" && label1 == label2)
+}
+
+// isInterfaceConfigured checks whether an interface has a valid network configuration.
+// Returns true if:
+//   - it is a GSM interface (with GSM config or GSM type), OR
+//   - it has DHCP enabled, OR
+//   - it has a valid static IP address
+//
+// Returns false for unconfigured interfaces (e.g., disconnected Ethernet with no
+// DHCP and no static IP). Processing such interfaces causes NetworkManager errors:
+// "ipv4.addresses: this property cannot be empty for 'method=manual'"
+func isInterfaceConfigured(iface *v1.Interface) bool {
+	if iface == nil {
+		return false
+	}
+
+	if isGSMInterface(iface) {
+		return true
+	}
+
+	if iface.DHCP == common.Enabled {
+		return true
+	}
+
+	if iface.Static != nil && iface.Static.IPv4 != "" {
+		return true
+	}
+
+	return false
 }

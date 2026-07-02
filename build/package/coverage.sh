@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+# Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
 # Licensed under the MIT license
 # See LICENSE file in the top-level directory
 
@@ -15,7 +15,9 @@ mkdir -p "$COVERAGE_DIR";
 # Create a coverage file for each package
 for package in ${PKG_LIST}; do
     echo "Generating global code coverage report for $package"
-    go test -gcflags=all=-l -covermode=count -coverprofile "${COVERAGE_DIR}/${package##*/}.cov" "$package" ;
+    # Use full package path with slashes replaced by dashes to avoid name collisions
+    COVERAGE_FILE="${COVERAGE_DIR}/$(echo ${package} | sed 's/\//-/g').cov"
+    go test -gcflags=all=-l -covermode=count -coverprofile "${COVERAGE_FILE}" "$package" ;
 done ;
 
 # Merge the coverage profile files

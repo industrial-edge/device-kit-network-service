@@ -1,15 +1,21 @@
 ## Table of Contents
 
 - [Network.proto](#Network.proto)
+    - [ConnectionSettings](#siemens.iedge.dmapi.network.v1.ConnectionSettings)
     - [Interface](#siemens.iedge.dmapi.network.v1.Interface)
     - [Interface.Dns](#siemens.iedge.dmapi.network.v1.Interface.Dns)
+    - [Interface.GsmConf](#siemens.iedge.dmapi.network.v1.Interface.GsmConf)
     - [Interface.L2](#siemens.iedge.dmapi.network.v1.Interface.L2)
     - [Interface.L2.AuxiliaryAddressesEntry](#siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry)
+    - [Interface.Route](#siemens.iedge.dmapi.network.v1.Interface.Route)
     - [Interface.StaticConf](#siemens.iedge.dmapi.network.v1.Interface.StaticConf)
     - [NetworkInterfaceRequest](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest)
     - [NetworkInterfaceRequestWithLabel](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel)
     - [NetworkSettings](#siemens.iedge.dmapi.network.v1.NetworkSettings)
     - [NetworkSettings.LabelMapEntry](#siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry)
+  
+    - [ConnectionSettings.ConnectionType](#siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType)
+    - [Interface.InterfaceTypeEnum](#siemens.iedge.dmapi.network.v1.Interface.InterfaceTypeEnum)
   
     - [NetworkService](#siemens.iedge.dmapi.network.v1.NetworkService)
   
@@ -21,6 +27,23 @@
 <p align="right"><a href="#top">Top</a></p>
 
 ## Network.proto
+
+
+
+<a name="siemens.iedge.dmapi.network.v1.ConnectionSettings"></a>
+
+### ConnectionSettings
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| Name | [string](#string) |  | Connection name, e.g.: "Cellular Connection 1" |
+| connection_type | [ConnectionSettings.ConnectionType](#siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType) |  |  |
+| gsm | [Interface.GsmConf](#siemens.iedge.dmapi.network.v1.Interface.GsmConf) |  | <-- Reusing GsmConf from Interface |
+
+
+
 
 
 
@@ -40,6 +63,9 @@ Interface type holds settings for a Network Interface.
 | L2Conf | [Interface.L2](#siemens.iedge.dmapi.network.v1.Interface.L2) |  |  |
 | InterfaceName | [string](#string) |  | ens2p |
 | Label | [string](#string) |  | x1 |
+| Routes | [Interface.Route](#siemens.iedge.dmapi.network.v1.Interface.Route) | repeated | a list of routes for the interface. |
+| InterfaceType | [Interface.InterfaceTypeEnum](#siemens.iedge.dmapi.network.v1.Interface.InterfaceTypeEnum) | optional |  |
+| GsmConfiguration | [Interface.GsmConf](#siemens.iedge.dmapi.network.v1.Interface.GsmConf) |  |  |
 
 
 
@@ -56,6 +82,24 @@ Type that contains Primary and Secondary DNS.
 | ----- | ---- | ----- | ----------- |
 | PrimaryDNS | [string](#string) |  | e.g: "1.1.1.2" |
 | SecondaryDNS | [string](#string) |  | e.g: "1.1.1.1" |
+
+
+
+
+
+
+<a name="siemens.iedge.dmapi.network.v1.Interface.GsmConf"></a>
+
+### Interface.GsmConf
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| Apn | [string](#string) |  | Required. Access Point Name, e.g.: "internet" |
+| Pin | [string](#string) |  | Optional. SIM card PIN |
+| Username | [string](#string) |  | Optional. APN Username for authentication |
+| Password | [string](#string) |  | Optional. APN Password for authentication |
 
 
 
@@ -91,6 +135,24 @@ Type that contains Primary and Secondary DNS.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="siemens.iedge.dmapi.network.v1.Interface.Route"></a>
+
+### Interface.Route
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| Destination | [string](#string) |  | Required. Dotted decimal IP address, e.g: 192.168.5.0 |
+| Netmask | [string](#string) |  | Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0 |
+| NextHop | [string](#string) |  | Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined. |
+| Metric | [uint32](#uint32) |  | Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100 |
 
 
 
@@ -177,6 +239,30 @@ Contains multiple network interface settings. It can be used to apply or get the
 
  <!-- end messages -->
 
+
+<a name="siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType"></a>
+
+### ConnectionSettings.ConnectionType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| UNKNOWN | 0 | Unspecified |
+| GSM | 1 | GSM-type connections |
+
+
+
+<a name="siemens.iedge.dmapi.network.v1.Interface.InterfaceTypeEnum"></a>
+
+### Interface.InterfaceTypeEnum
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| ETHERNET | 0 |  |
+| GSM | 1 |  |
+
+
  <!-- end enums -->
 
  <!-- end HasExtensions -->
@@ -195,6 +281,8 @@ GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-ap
 | GetInterfaceWithMac | [NetworkInterfaceRequest](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest) | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | Returns the current setting for the interface, with given MAC address. |
 | GetInterfaceWithLabel | [NetworkInterfaceRequestWithLabel](#siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel) | [Interface](#siemens.iedge.dmapi.network.v1.Interface) | Returns the current setting for the interface, with given Label. |
 | ApplySettings | [NetworkSettings](#siemens.iedge.dmapi.network.v1.NetworkSettings) | [.google.protobuf.Empty](#google.protobuf.Empty) | Applies given configurations to Network Interfaces. |
+| CreateConnection | [ConnectionSettings](#siemens.iedge.dmapi.network.v1.ConnectionSettings) | [.google.protobuf.Empty](#google.protobuf.Empty) | Creates a new network connection with the specified connection settings. |
+| RemoveConnection | [ConnectionSettings](#siemens.iedge.dmapi.network.v1.ConnectionSettings) | [.google.protobuf.Empty](#google.protobuf.Empty) | Removes an existing network connection based on the specified connection settings. |
 
  <!-- end services -->
 
