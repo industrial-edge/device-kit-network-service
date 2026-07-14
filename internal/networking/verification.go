@@ -40,6 +40,8 @@ func verify(newSettings *v1.NetworkSettings, configurator *NetworkConfigurator) 
 		if element.DNSConfig != nil {
 			verifyDNS(element, resultOut)
 		}
+
+		verifyRoutes(element, resultOut)
 	}
 	errorMessages := resultOut.builder.String()
 	var err error
@@ -101,6 +103,30 @@ func verifyDNS(element *v1.Interface, result *verifyResult) {
 		if val == nil {
 			result.retVal = false
 			result.builder.WriteString(fmt.Sprintf("wrong dns address %s \n", element.DNSConfig.SecondaryDNS))
+		}
+	}
+}
+
+func verifyRoutes(element *v1.Interface, result *verifyResult) {
+	for _, route := range element.Routes {
+		if val := route.GetDestination(); net.ParseIP(val) == nil {
+			result.retVal = false
+			result.builder.WriteString(fmt.Sprintf("wrong route destination address %s \n", val))
+		}
+
+		if val := route.GetNetmask(); net.ParseIP(val) == nil {
+			result.retVal = false
+			result.builder.WriteString(fmt.Sprintf("wrong route netmask address %s \n", val))
+		}
+
+		if val := route.GetNextHop(); val != "" && net.ParseIP(val) == nil {
+			result.retVal = false
+			result.builder.WriteString(fmt.Sprintf("wrong route next-hop address %s \n", val))
+		}
+
+		if val := route.GetMetric(); val < MinRouteMetric {
+			result.retVal = false
+			result.builder.WriteString(fmt.Sprintf("wrong route metric %d <= 1 \n", val))
 		}
 	}
 }

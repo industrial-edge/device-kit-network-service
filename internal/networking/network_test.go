@@ -1124,6 +1124,83 @@ func Test_CreateBackupFromExisting_ReturnsNilWhenNoConnections(t *testing.T) {
 	assert.Nil(t, result, "createBackupFromExisting should return a nil ConnectionSettings instance when no connections are found")
 }
 
+func Test_CreateBackupFromExisting_ReturnsBackupWithRoutes(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	testDevice := new(mockgnm.MockDeviceWired)
+	mockConnection := new(mockgnm.MockConnection)
+
+	expectedBackup := nm.ConnectionSettings{
+		"connection": {
+			"id":   "Test Connection",
+			"uuid": "123e4567-e89b-12d3-a456-426614174000",
+			"type": "802-3-ethernet",
+		},
+		EthernetType: map[string]interface{}{
+			MACAddressKey: "F7:2B:A1:D5:97:4E",
+		},
+		IPV4Key: map[string]any{
+			RouteDataKey: []map[string]any{
+				{
+					"destination": "1.2.3.4",
+					"prefix":      25,
+					"next-hop":   "2.4.5.6",
+					"route-metric": 100,
+				},
+				{
+					"destination": "1.2.3.4",
+					"prefix":      25,
+					"route-metric": 100,
+				},
+				{
+					"destination": "1.2.3.4",
+					"prefix":      25,
+				},
+			},
+		},
+	}
+
+	mockConnection.On("GetSettings").Return(nm.ConnectionSettings{
+		"connection": {
+			"id":             "Test Connection",
+			"uuid":           "123e4567-e89b-12d3-a456-426614174000",
+			"type":           "802-3-ethernet",
+			"interface-name": nil,
+			"timestamp":      1727244747362599705,
+		},
+		EthernetType: map[string]interface{}{
+			MACAddressKey: "F7:2B:A1:D5:97:4E",
+		},
+		IPV4Key: map[string]any{
+			RouteDataKey: []map[string]any{
+				{
+					"destination": "1.2.3.4",
+					"prefix":      25,
+					"next-hop":   "2.4.5.6",
+					"route-metric": 100,
+				},
+			},
+		},
+	}, nil)
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	// Mock listConnections function to return a list of mock connections
+	patches.ApplyFunc(listConnections, func(_ nm.Device) []nm.Connection {
+		return []nm.Connection{mockConnection}
+	})
+
+	patches.ApplyFunc(setMACAddressInBackup, func(backup nm.ConnectionSettings, device nm.DeviceWired) error {
+		return errors.New("error from setMACAddressInBackup")
+	})
+
+	result := nc.createBackupFromExisting(testDevice)
+
+	assert.Equal(t, expectedBackup["connection"]["id"], result["connection"]["id"], "ID should match")
+	assert.Equal(t, expectedBackup["802-3-ethernet"]["mac-address"], result["802-3-ethernet"]["mac-address"], "MAC address should match")
+	assert.Equal(t, expectedBackup[IPV4Key][RouteDataKey], expectedBackup[IPV4Key][RouteDataKey], "Routes must match")
+}
+
 func Test_AddConnection_SuccessfullyActivatesConnection(t *testing.T) {
 	mockNetworkManager := &mockgnm.MockNetworkManager{}
 	nc := &NetworkConfigurator{gnm: mockNetworkManager}

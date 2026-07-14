@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 )
 
@@ -43,12 +44,21 @@ func IPToUInt32LI(ip string) uint32 {
 
 func ParseNetMaskSize(value string) uint32 {
 	val := net.ParseIP(value)
-	addr := val.To4()
-
-	sz, _ := net.IPv4Mask(addr[0], addr[1], addr[2], addr[3]).Size()
-	return uint32(sz)
-
+	if val == nil {
+		log.Printf("Failed to parse IP: %s", value)
+		return 0
+	}
+	if addr := val.To4(); addr != nil {
+		sz, _ := net.IPv4Mask(addr[0], addr[1], addr[2], addr[3]).Size()
+		return uint32(sz)
+	}
+	if addr := val.To16(); addr != nil {
+		sz, _ := net.IPMask(addr).Size()
+		return uint32(sz)
+	}
+	return 0
 }
+
 func ParseNetMask(simpleNotation uint32) string {
 	var simple string
 	_, ipnet, err := net.ParseCIDR("0.0.0.0/" + fmt.Sprint(simpleNotation))

@@ -47,8 +47,17 @@ func Test_SuccessParseNetMaskSize(t *testing.T) {
 	ip := "255.255.255.0"
 	expectedResult := uint32(24)
 	result := ParseNetMaskSize(ip)
-
 	assert.Equal(t, expectedResult, result, "ParseNetMaskSize result should match expected size")
+
+	ipv6 := "ffff:ffff:ffff:ffff::"
+	expectedResultV6 := uint32(64)
+	resultV6 := ParseNetMaskSize(ipv6)
+	assert.Equal(t, expectedResultV6, resultV6, "ParseNetMaskSize result should match expected size for IPv6")
+
+	invalidIp := "192.168.1.256"
+	expectedResultInvalid := uint32(0)
+	resultInvalid := ParseNetMaskSize(invalidIp)
+	assert.Equal(t, expectedResultInvalid, resultInvalid, "ParseNetMaskSize result should match expected size for invalid IP")
 }
 
 func Test_SuccessParseNetMask(t *testing.T) {

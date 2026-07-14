@@ -54,6 +54,14 @@ message Interface {
     L2 L2Conf = 6;
     string InterfaceName = 7;  // ens2p
     string Label =8 ; // x1
+
+    message Route {
+        string Destination = 1; // Required. Dotted decimal IP address, e.g: 192.168.5.0
+        string Netmask = 2; // Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0
+        string NextHop = 3; // Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined.
+        uint32 Metric = 4; // Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100
+    }
+    repeated Route Routes = 9; // a list of routes for the interface.
 }
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.

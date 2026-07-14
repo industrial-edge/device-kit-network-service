@@ -40,6 +40,7 @@ Interface type holds settings for a Network Interface.
 | L2Conf | [Interface.L2](#siemens.iedge.dmapi.network.v1.Interface.L2) |  |  |
 | InterfaceName | [string](#string) |  | ens2p |
 | Label | [string](#string) |  | x1 |
+| Routes | [Interface.Route](#siemens.iedge.dmapi.network.v1.Interface.Route) |  | Extra IPv4 routes defined on this interface. |
 
 
 
@@ -111,7 +112,16 @@ StaticConf type holds IP Netmask and Gateway information
 
 
 
+<a name="siemens.iedge.dmapi.network.v1.Interface.Route"></a>
 
+### Interface.Route
+
+| Field       | Type              | Label | Description |
+| -----       | ----              | ----- | ----------- |
+| Destination | [string](#string) |       | Required. Destination network IP address. I.e. 192.168.1.0. |
+| Netmask     | [string](#string) |       | Optional. IP mask of the destination network. I.e. 255.255.255.0. |
+| NextHop     | [string](#string) |       | Optional. IP address of the peer to route via. |
+| Metric      | [uint32](#uint32) |       | Required. Metric value of the prioritization between equal routes. Must be > 1. |
 
 
 <a name="siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest"></a>
