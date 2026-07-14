@@ -58,6 +58,17 @@ func getMockIP4NsData() []nm.IP4NameserverData {
 	}
 }
 
+func getMockRouteData() []map[string]interface{} {
+	return []map[string]interface{}{
+		{
+			DestinationKey: "10.0.0.0",
+			PrefixKey:      uint32(18),
+			NextHopKey:     "1.2.3.5",
+			MetricKey:      uint32(5),
+		},
+	}
+}
+
 func Test_RetrieveSettingsFromBackup_ReturnsCorrectSettings(t *testing.T) {
 	backup := nm.ConnectionSettings{
 		ConnectionKey: map[string]interface{}{
@@ -77,6 +88,26 @@ func Test_RetrieveSettingsFromBackup_ReturnsCorrectSettings(t *testing.T) {
 					PrefixKey:  uint32(24),
 				},
 			},
+			RouteDataKey: [][]uint32{
+				{ // all parameters exist
+					555,
+					13,
+					235,
+					1,
+				},
+				{ // only next hop
+					0,
+					0,
+					6,
+					0,
+				},
+				{ // no next hop
+					555,
+					12,
+					0,
+					5,
+				},
+			},
 		},
 	}
 
@@ -92,6 +123,7 @@ func Test_RetrieveSettingsFromBackup_ReturnsCorrectSettings(t *testing.T) {
 	assert.NotEqual(t, backup[ConnectionKey][UUIDKey], connection[ConnectionKey][UUIDKey], "UUID should be different")
 	assert.Equal(t, backup[EthernetType][MACAddressKey], connection[EthernetType][MACAddressKey], "MACAddress should be the same")
 	assert.Equal(t, backup[IPV4Key][AddressDataKey], connection[IPV4Key][AddressDataKey], "AddressData should be the same")
+	assert.Equal(t, backup[IPV4Key][RouteDataKey], connection[IPV4Key][RouteDataKey], "Route should be the same")
 
 	expectedTimeStamp := connection[ConnectionKey][TimeStampKey].(int64)
 	currentTime := time.Now().UnixNano()
@@ -141,6 +173,85 @@ func Test_ParseDns_ReturnsCorrectDnsConfig(t *testing.T) {
 	dns := parseDns(dnsArray)
 
 	assert.Equal(t, expected, dns, "Parsed DNS should match the expected DNS")
+}
+
+func Test_ParseRoutes_ReturnsCorrectRouteConfig(t *testing.T) {
+	routeArray := getMockRouteData()
+
+	expected := []*v1.Interface_Route{
+		{
+			Destination: "10.0.0.0",
+			Netmask:     net.IP(net.CIDRMask(int(routeArray[0][PrefixKey].(uint32)), 32)).String(),
+			NextHop:     "1.2.3.5",
+			Metric:      5,
+		},
+	}
+
+	route := parseRoutes(routeArray)
+	assert.Equal(t, expected, route, "Parsed Route should match the expected Route")
+}
+
+func Test_ParseRoutes_NilValuesForKeys(t *testing.T) {
+	nilRouteArray := []map[string]any{
+		{
+			DestinationKey: nil,
+			PrefixKey:      nil,
+			NextHopKey:     nil,
+			MetricKey:      nil,
+		},
+	}
+	nilExpected := []*v1.Interface_Route{
+		{
+			Destination: "",
+			Netmask:     net.IP(net.CIDRMask(0, 32)).String(),
+			NextHop:     "",
+			Metric:      0,
+		},
+	}
+	nilRoute := parseRoutes(nilRouteArray)
+	assert.Equal(t, nilExpected, nilRoute, "Parsed Route with nil values should match the expected Route v4")
+}
+
+func Test_ParseRoutes_InvalidPrefixDstCombinations(t *testing.T) {
+	invalidRouteArray := []map[string]any{
+		{
+			DestinationKey: "10.0.0.0",
+			PrefixKey:      uint32(40), // Invalid for IPv4
+			NextHopKey:     "1.2.3.5",
+			MetricKey:      uint32(5),
+		},
+	}
+	invalidExpected := []*v1.Interface_Route{
+		{
+			Destination: "10.0.0.0",
+			Netmask:     net.IP(net.CIDRMask(40, 32)).String(), // Will log error, but still returns
+			NextHop:     "1.2.3.5",
+			Metric:      5,
+		},
+	}
+	invalidRoute := parseRoutes(invalidRouteArray)
+	assert.Equal(t, invalidExpected, invalidRoute, "Parsed Route with invalid prefix/dst should match the expected Route v4")
+}
+
+func Test_ParseRoutes_TypeCastErrors(t *testing.T) {
+	typeCastErrorArray := []map[string]any{
+		{
+			DestinationKey: 12345,          // Not a string
+			PrefixKey:      "not-a-uint32", // Not a uint32
+			NextHopKey:     67890,          // Not a string
+			MetricKey:      "not-a-uint32", // Not a uint32
+		},
+	}
+	typeCastExpected := []*v1.Interface_Route{
+		{
+			Destination: "",
+			Netmask:     net.IP(net.CIDRMask(0, 32)).String(),
+			NextHop:     "",
+			Metric:      0,
+		},
+	}
+	typeCastRoute := parseRoutes(typeCastErrorArray)
+	assert.Equal(t, typeCastExpected, typeCastRoute, "Parsed Route with type cast errors should match the expected Route v4")
 }
 
 func Test_ListConnections_ReturnsCorrectConnections(t *testing.T) {
@@ -426,6 +537,7 @@ func Test_ConvertToProto_ReturnsCorrectProtoWhenDHCPEnabled(t *testing.T) {
 	}
 
 	mockIPV4Config.On("GetPropertyNameserverData").Return(mockNsData, nil)
+	mockIPV4Config.On("GetPropertyRouteData").Return([]nm.IP4RouteData{}, nil)
 
 	patches := gomonkey.NewPatches()
 	defer patches.Reset()
@@ -458,6 +570,7 @@ func Test_ConvertToProto_ReturnsCorrectProtoWhenStaticIP(t *testing.T) {
 	}
 
 	mockIPV4Config.On("GetPropertyNameserverData").Return(mockNsData, nil)
+	mockIPV4Config.On("GetPropertyRouteData").Return([]nm.IP4RouteData{}, nil)
 
 	result := convertToProto(connection, mockIPV4Config, mac)
 
@@ -486,11 +599,58 @@ func Test_ConvertToProto_ReturnsCorrectProtoWithDHCPIPConfig(t *testing.T) {
 	mockIPV4Config.On("GetPropertyAddressData").Return([]nm.IP4AddressData{{Address: "192.168.1.1", Prefix: uint8(24)}}, nil)
 	mockIPV4Config.On("GetPropertyGateway").Return("192.168.1.254", nil)
 	mockIPV4Config.On("GetPropertyNameserverData").Return(mockNsData, nil)
+	mockIPV4Config.On("GetPropertyRouteData").Return([]nm.IP4RouteData{}, nil)
 
 	result := convertToProto(connection, mockIPV4Config, mac)
 
 	assert.Equal(t, Enabled, result.DHCP, "DHCP should be enabled")
 	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
+}
+
+func Test_ConvertToProto_ReturnsCorrectProtoWithRouteConfig(t *testing.T) {
+	mac := "f7:2b:a1:d5:97:4e"
+	mockNsData := getMockIP4NsData()
+	mockIPV4Config := new(mockgnm.MockIP4Config)
+	connection := nm.ConnectionSettings{
+		IPV4Key: map[string]interface{}{
+			MethodKey: Auto,
+			AddressDataKey: []map[string]interface{}{
+				{
+					AddressKey: "192.168.1.1",
+					PrefixKey:  uint32(24),
+				},
+			},
+			GatewayKey:     "192.168.1.254",
+			RouteMetricKey: int64(1),
+			RouteDataKey: []map[string]interface{}{
+				{
+					DestinationKey: "1.2.3.1",
+					PrefixKey:      uint32(23),
+					NextHopKey:     "1.2.3.2",
+					MetricKey:      uint32(5),
+				},
+			},
+		},
+	}
+
+	mockIPV4Config.On("GetPropertyAddressData").Return([]nm.IP4AddressData{{Address: "192.168.1.1", Prefix: uint8(24)}}, nil)
+	mockIPV4Config.On("GetPropertyGateway").Return("192.168.1.254", nil)
+	mockIPV4Config.On("GetPropertyNameserverData").Return(mockNsData, nil)
+
+	result := convertToProto(connection, mockIPV4Config, mac)
+
+	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
+
+	expectedRoutes := []*v1.Interface_Route{
+		{
+			Destination: "1.2.3.1",
+			Netmask:     "255.255.254.0",
+			NextHop:     "1.2.3.2",
+			Metric:      5,
+		},
+	}
+
+	assert.Equal(t, expectedRoutes, result.GetRoutes())
 }
 
 func Test_NewSettingsFromProto_ReturnsSettingsWhenDHCPEnabled(t *testing.T) {
@@ -501,6 +661,14 @@ func Test_NewSettingsFromProto_ReturnsSettingsWhenDHCPEnabled(t *testing.T) {
 		DHCP:             "enabled",
 		Static:           getMockInterfaceStaticConf(),
 		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "8.4.4.4"},
+		Routes: []*v1.Interface_Route{
+			{
+				Destination: "1.5.6.7",
+				Netmask:     "255.255.254.0",
+				NextHop:     "1.2.3.4",
+				Metric:      2,
+			},
+		},
 	}
 
 	expectedTimestamp := int64(1727351248)
@@ -519,6 +687,14 @@ func Test_NewSettingsFromProto_ReturnsSettingsWhenDHCPEnabled(t *testing.T) {
 			DNSKey:           []uint32{1234567890, 1234567890},
 			DNSIgnoreAutoKey: Yes,
 			RouteMetricKey:   1,
+			RouteDataKey: []DBusDict{
+				{
+					"dest":     dbus.MakeVariant("1.5.6.7"),
+					"prefix":   dbus.MakeVariant(uint32(23)),
+					"next-hop": dbus.MakeVariant("1.2.3.4"),
+					"metric":   dbus.MakeVariant(uint32(2)),
+				},
+			},
 		},
 		EthernetType: map[string]interface{}{
 			MACAddressKey: net.HardwareAddr{},
@@ -548,6 +724,39 @@ func Test_NewSettingsFromProto_ReturnsSettingsWhenDHCPEnabled(t *testing.T) {
 
 	assert.NotNil(t, settings, "newSettingsFromProto should return non-nil result")
 	assert.Equal(t, expectedSettings, settings)
+}
+
+func Test_ConvertToProto_RawRouteDataCastFails(t *testing.T) {
+	mac := "f7:2b:a1:d5:97:4e"
+	mockNsData := getMockIP4NsData()
+	mockIPV4Config := new(mockgnm.MockIP4Config)
+	connection := nm.ConnectionSettings{
+		IPV4Key: map[string]any{
+			MethodKey:      Auto,
+			RouteMetricKey: int64(1),
+			RouteDataKey:   "not-a-slice", // This will fail type assertion
+		},
+	}
+	mockIPV4Config.On("GetPropertyNameserverData").Return(mockNsData, nil)
+	mockIPV4Config.On("GetPropertyRouteData").Return([]nm.IP4RouteData{}, nil)
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyFunc(parseDHCPIPv4Config, func(ipv4conf nm.IP4Config) *v1.Interface_StaticConf {
+		return getMockInterfaceStaticConf()
+	})
+
+	var logOutput bytes.Buffer
+	log.SetOutput(&logOutput)
+	defer log.SetOutput(os.Stderr)
+
+	result := convertToProto(connection, mockIPV4Config, mac)
+
+	assert.Equal(t, Enabled, result.DHCP, "DHCP should be enabled")
+	assert.Equal(t, "F7:2B:A1:D5:97:4E", result.MacAddress)
+	assert.Nil(t, result.Routes, "Routes should be nil when rawRouteData cast fails")
+	assert.Contains(t, logOutput.String(), "failed to cast routes", "Should log cast failure")
 }
 
 func Test_NewSettingsFromProto_ReturnsSettingsWithDefaultsWhenPutMacAddressFails(t *testing.T) {
@@ -615,6 +824,14 @@ func Test_NewSettingsFromProto_ReturnsSettingsWithStaticIPWhenDHCPDisabled(t *te
 		DHCP:             "disabled",
 		Static:           getMockInterfaceStaticConf(),
 		DNSConfig:        &v1.Interface_Dns{PrimaryDNS: "8.8.8.8", SecondaryDNS: "8.8.4.4"},
+		Routes: []*v1.Interface_Route{
+			{
+				Destination: "1.5.6.7",
+				Netmask:     "255.255.254.0",
+				NextHop:     "1.2.3.4",
+				Metric:      2,
+			},
+		},
 	}
 
 	expectedTimestamp := int64(1727351248)
@@ -639,6 +856,14 @@ func Test_NewSettingsFromProto_ReturnsSettingsWithStaticIPWhenDHCPDisabled(t *te
 				},
 			},
 			GatewayKey: "192.168.1.254",
+			RouteDataKey: []DBusDict{
+				{
+					"dest":     dbus.MakeVariantWithSignature(nil, dbus.ParseSignatureMust("")),
+					"prefix":   dbus.MakeVariantWithSignature(nil, dbus.ParseSignatureMust("")),
+					"next-hop": dbus.MakeVariantWithSignature(nil, dbus.ParseSignatureMust("")),
+					"metric":   dbus.MakeVariantWithSignature(nil, dbus.ParseSignatureMust("")),
+				},
+			},
 		},
 		EthernetType: map[string]interface{}{
 			MACAddressKey: net.HardwareAddr{},
@@ -1081,6 +1306,35 @@ func Test_setMacAddressInSettings_InvalidMacAddress(t *testing.T) {
 	assert.Error(t, err, "Expected error from ParseMAC")
 }
 
+func Test_setMacAddressInSettings_FallbackToHwAddress(t *testing.T) {
+	settings := nm.ConnectionSettings{EthernetType: map[string]interface{}{}}
+	ethernetDevice := &mockgnm.MockDeviceWired{}
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	// Make GetPropertyPermHwAddress return empty string (simulate missing permanent MAC)
+	patches.ApplyMethodReturn(ethernetDevice, "GetPropertyPermHwAddress", "", nil)
+
+	// Make GetPropertyHwAddress return a valid MAC instead
+	patches.ApplyMethodReturn(ethernetDevice, "GetPropertyHwAddress", "00:11:22:33:44:55", nil)
+
+	// Patch ParseMAC to return the expected parsed hardware address
+	expectedMac := net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}
+	patches.ApplyFuncReturn(net.ParseMAC, expectedMac, nil)
+
+	// Call the function
+	err := setMacAddressInSettings(settings, ethernetDevice)
+
+	// Assertions
+	assert.NoError(t, err, "Expected no error when fallback MAC address is used")
+	assert.Equal(
+		t,
+		expectedMac,
+		net.HardwareAddr(settings[EthernetType][MACAddressKey].([]uint8)),
+		"Expected fallback MAC address to be set in settings",
+	)
+}
+
 func Test_setMacAddressInSettings_Success(t *testing.T) {
 	settings := nm.ConnectionSettings{EthernetType: map[string]interface{}{}}
 	ethernetDevice := &mockgnm.MockDeviceWired{}
@@ -1153,4 +1407,44 @@ func Test_changePriorityOfGatewayInterface_Success(t *testing.T) {
 	err := changePriorityOfGatewayInterface(settings, connection)
 	assert.NoError(t, err, "Expected no error when the route metric is updated successfully")
 	assert.Equal(t, int32(-1), settings[IPV4Key][RouteMetricKey], "Expected Route Metric to be set to -1")
+}
+
+func Test_putExtraRoutes(t *testing.T) {
+	intf := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{
+				Destination: "1.5.6.7",
+				Netmask:     "255.255.254.0",
+				NextHop:     "1.2.3.4",
+				Metric:      1,
+			},
+			{
+				Destination: "1.5.6.0",
+				Netmask:     "255.255.255.0",
+				NextHop:     "1.2.3.6",
+			},
+		},
+	}
+
+	out := nm.ConnectionSettings{}
+
+	putExtraRoutes(intf, out)
+
+	dbusDicts, ok := out[IPV4Key][RouteDataKey].([]DBusDict)
+
+	assert.Equal(t, ok, true, "expected a DBusDict")
+
+	dbusDict := dbusDicts[0]
+
+	assert.Equal(t, intf.Routes[0].Destination, dbusDict["dest"].Value(), "destination match")
+	assert.Equal(t, uint32(23), dbusDict["prefix"].Value(), "netmask match")
+	assert.Equal(t, intf.Routes[0].NextHop, dbusDict["next-hop"].Value(), "next hop match")
+	assert.Equal(t, intf.Routes[0].Metric, dbusDict["metric"].Value(), "metric match")
+
+	dbusDict = dbusDicts[1]
+
+	assert.Equal(t, intf.Routes[1].Destination, dbusDict["dest"].Value(), "destination match 2")
+	assert.Equal(t, uint32(24), dbusDict["prefix"].Value(), "netmask match 2")
+	assert.Equal(t, intf.Routes[1].NextHop, dbusDict["next-hop"].Value(), "next hop match 2")
+	assert.Equal(t, intf.Routes[1].Metric, dbusDict["metric"].Value(), "metric match 2")
 }

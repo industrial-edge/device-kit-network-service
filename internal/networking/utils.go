@@ -105,6 +105,63 @@ func parseDns(dnsArray []nm.IP4NameserverData) *v1.Interface_Dns {
 	return dns
 }
 
+// parseRoutes parses the route data from the connection settings into a slice
+// of Interface_Route.
+func parseRoutes(routeArray []map[string]any) []*v1.Interface_Route {
+	routes := []*v1.Interface_Route{}
+
+	for _, routeEntry := range routeArray {
+		route := parseRoute(routeEntry)
+		routes = append(routes, route)
+	}
+
+	return routes
+}
+
+// parseRoute parses a single route entry from the connection settings.
+// Like the rest of the connection settings parsing functions, it expects the
+// route data to be in a specific format, which is a slice of maps with
+// specific keys for destination, prefix, next hop, and metric and valid
+// values: mandatory destination and prefix, and optional next hop and metric.
+func parseRoute(routeEntry map[string]any) *v1.Interface_Route {
+	getString := func(val any, key string) string {
+		if val == nil {
+			return ""
+		}
+		s, ok := val.(string)
+		if !ok {
+			log.Printf("Failed to cast %s to string: %v", key, val)
+			return ""
+		}
+		return s
+	}
+
+	getUint32 := func(val any, key string) uint32 {
+		if val == nil {
+			return 0
+		}
+		u, ok := val.(uint32)
+		if !ok {
+			log.Printf("Failed to cast %s to uint32: %v", key, val)
+			return 0
+		}
+		return u
+	}
+
+	dst := getString(routeEntry[DestinationKey], DestinationKey)
+	prefix := getUint32(routeEntry[PrefixKey], PrefixKey)
+	nextHop := getString(routeEntry[NextHopKey], NextHopKey)
+	metric := getUint32(routeEntry[MetricKey], MetricKey)
+	dstLen := net.IPv4len * 8
+
+	return &v1.Interface_Route{
+		Destination: dst,
+		Netmask:     net.IP(net.CIDRMask(int(prefix), dstLen)).String(),
+		NextHop:     nextHop,
+		Metric:      metric,
+	}
+}
+
 func listConnections(device nm.DeviceWired) []nm.Connection {
 	var connections []nm.Connection
 
@@ -229,6 +286,16 @@ func convertToProto(connection nm.ConnectionSettings, ipv4Config nm.IP4Config, m
 		retVal.DNSConfig = parseDns(dnsArray)
 	}
 
+	if ipv4, have := connection[IPV4Key]; have {
+		if rawRouteData, have := ipv4[RouteDataKey]; have {
+			if routeData, ok := rawRouteData.([]map[string]any); ok {
+				retVal.Routes = parseRoutes(routeData)
+			} else {
+				log.Println("failed to cast routes:", mac)
+			}
+		}
+	}
+
 	return retVal
 }
 
@@ -264,6 +331,8 @@ func applyConnectionSetting(connectionSuffix string, protoData *v1.Interface, co
 	}
 
 	putDNSConfig(protoData, connection)
+
+	putExtraRoutes(protoData, connection)
 }
 
 // ConfigureExistingGatewayInterfacesExceptProtoData sets the route metric for all Ethernet device connections
@@ -354,6 +423,9 @@ func checkAndUpdateGatewayInterfaceForConnection(connection nm.Connection, proto
 // by retrieving the permanent hardware address from the Ethernet device.
 func setMacAddressInSettings(settings nm.ConnectionSettings, ethernetDevice nm.DeviceWired) error {
 	retValue, _ := ethernetDevice.GetPropertyPermHwAddress()
+	if retValue == "" {
+		retValue, _ = ethernetDevice.GetPropertyHwAddress()
+	}
 	macAddr, err := net.ParseMAC(retValue)
 	if err != nil {
 		return err
@@ -451,6 +523,67 @@ func putDNSConfig(protoData *v1.Interface, connection nm.ConnectionSettings) {
 			connection[IPV4Key][DNSIgnoreAutoKey] = Yes
 		}
 	}
+}
+
+// putExtraRoutes puts additional IPv4 routes into the connection settings.
+// It expects the route data in protoData has already been validated and in
+// the correct format.
+func putExtraRoutes(protoData *v1.Interface, connection nm.ConnectionSettings) {
+	var routes []DBusDict
+
+	for _, protoRoute := range protoData.GetRoutes() {
+		route := buildRouteDict(protoRoute)
+		routes = append(routes, route)
+	}
+
+	if len(routes) > 0 {
+		ipv4Map := connection[IPV4Key]
+		if ipv4Map == nil {
+			ipv4Map = make(map[string]any)
+			connection[IPV4Key] = ipv4Map
+		}
+		ipv4Map[RouteDataKey] = routes
+	}
+}
+
+// buildRouteDict creates a DBusDict for a single route. It expects protoRoute
+// to have been validated beforehand and contain the necessary fields.
+func buildRouteDict(protoRoute *v1.Interface_Route) DBusDict {
+	route := make(DBusDict)
+
+	setRouteDestination(route, protoRoute.GetDestination())
+	setRoutePrefix(route, protoRoute.GetNetmask())
+	setRouteNextHop(route, protoRoute.GetNextHop())
+	setRouteMetric(route, protoRoute.GetMetric())
+
+	return route
+}
+
+// setRouteDestination sets the destination IP address for the route. It expects
+// the destination to be a valid IP address string.
+func setRouteDestination(route DBusDict, dst string) {
+	route["dest"] = dbus.MakeVariant(net.ParseIP(dst).String())
+}
+
+// setRoutePrefix sets the prefix size for the route. It expects the netmask to be
+// a valid CIDR notation string (e.g., "255.255.255.0")
+func setRoutePrefix(route DBusDict, netmask string) {
+	route["prefix"] = dbus.MakeVariant(ParseNetMaskSize(netmask))
+}
+
+// setRouteNextHop sets the next hop IP address for the route. It expects the next hop
+// to be empty or a valid IP address string. If the next hop is empty, it will not set this field.
+func setRouteNextHop(route DBusDict, nh string) {
+	if len(nh) > 0 {
+		if net.ParseIP(nh) != nil {
+			route["next-hop"] = dbus.MakeVariant(nh)
+		}
+	}
+}
+
+// setRouteMetric sets the metric for the route.
+func setRouteMetric(route DBusDict, metric uint32) {
+	route["metric"] = dbus.MakeVariant(metric)
 }
 
 // determineIdentifier determines the identifier for the connection ID.

@@ -36,6 +36,8 @@ const (
 	MethodKey = "method"
 	// RouteMetricKey
 	RouteMetricKey = "route-metric"
+	// RouteDataKey
+	RouteDataKey = "route-data"
 	// EthernetType
 	EthernetType = "802-3-ethernet"
 	// ConnectionKey
@@ -74,4 +76,12 @@ const (
 	OutgoingRouteDestination = "0.0.0.0"
 	// Prefix For Outgoing Traffic
 	OutgoingRoutePrefix = 0
+	// Destination key
+	DestinationKey = "dest"
+	// Next-hop key
+	NextHopKey = "next-hop"
+	// Metric key
+	MetricKey = "metric"
+	// MinRouteMetric is the minimum value for a route metric for extra routes
+	MinRouteMetric = 2
 )

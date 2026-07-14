@@ -246,3 +246,111 @@ func TestVerify_DNSInvalid(t *testing.T) {
 	assert.False(t, valid, "verify should return false when DNSConfig is invalid")
 	assert.Error(t, err, "verify should return an error when DNS")
 }
+
+func TestVerifyRoutes_InvalidDestination(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "invalid-ip", Netmask: "255.255.255.0", NextHop: "192.168.0.1", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route destination address invalid-ip")
+}
+
+func TestVerifyRoutes_EmptyDestination(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "", Netmask: "255.255.255.0", NextHop: "192.168.0.1", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route destination address")
+}
+
+func TestVerifyRoutes_InvalidNetmask(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "invalid-netmask", NextHop: "192.168.0.1", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route netmask address invalid-netmask")
+}
+
+func TestVerifyRoutes_EmptyNetmask(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "", NextHop: "192.168.0.1", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route netmask address")
+}
+
+func TestVerifyRoutes_InvalidNextHop(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "255.255.255.0", NextHop: "invalid-nexthop", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route next-hop address invalid-nexthop")
+}
+
+func TestVerifyRoutes_EmptyNextHop(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "255.255.255.0", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.True(t, result.retVal)
+	assert.Empty(t, result.builder.String())
+}
+
+func TestVerifyRoutes_MissingMetric(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "255.255.255.0", NextHop: "192.168.0.2"},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route metric 0")
+}
+
+func TestVerifyRoutes_InvalidMetric(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "255.255.255.0", NextHop: "192.168.0.2", Metric: 1},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.False(t, result.retVal)
+	assert.Contains(t, result.builder.String(), "wrong route metric 1")
+}
+
+func TestVerifyRoutes_ValidRoute(t *testing.T) {
+	input := &v1.Interface{
+		Routes: []*v1.Interface_Route{
+			{Destination: "192.168.0.1", Netmask: "255.255.255.0", NextHop: "192.168.0.2", Metric: 10},
+		},
+	}
+	result := createMockVerifyResult(true)
+	verifyRoutes(input, result)
+	assert.True(t, result.retVal)
+	assert.Empty(t, result.builder.String())
+}
