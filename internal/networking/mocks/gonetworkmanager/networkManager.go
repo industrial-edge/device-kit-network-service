@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2024 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -23,6 +23,16 @@ func (m MockNetworkManager) Reload(flags uint32) error {
 
 func (m MockNetworkManager) GetDevices() ([]nm.Device, error) {
 	args := m.Called()
+
+	if mockDevices, ok := args.Get(0).([]MockDevice); ok {
+		var devices []nm.Device
+		for _, mockDevice := range mockDevices {
+			var device nm.Device = mockDevice
+			devices = append(devices, device)
+		}
+		return devices, args.Error(1)
+	}
+
 	return args.Get(0).([]nm.Device), args.Error(1)
 }
 
@@ -37,6 +47,15 @@ func (m MockNetworkManager) GetDeviceByIpIface(interfaceId string) (nm.Device, e
 }
 
 func (m MockNetworkManager) ActivateConnection(connection nm.Connection, device nm.Device, specificObject *dbus.Object) (nm.ActiveConnection, error) {
+	if specificObject == nil {
+		args := m.Called(connection, device, nil)
+
+		activeConn := args.Get(0)
+		if activeConn == nil {
+			return nil, args.Error(1)
+		}
+		return args.Get(0).(nm.ActiveConnection), args.Error(1)
+	}
 	args := m.Called(connection, device, specificObject)
 	return args.Get(0).(nm.ActiveConnection), args.Error(1)
 }

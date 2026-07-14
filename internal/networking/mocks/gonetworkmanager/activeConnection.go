@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2024 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -23,7 +23,11 @@ func (m *MockActiveConnection) GetPath() dbus.ObjectPath {
 
 func (m *MockActiveConnection) GetPropertyConnection() (nm.Connection, error) {
 	args := m.Called()
-	return args.Get(0).(nm.Connection), args.Error(1)
+	conn := args.Get(0)
+	if conn == nil {
+		return nil, args.Error(1)
+	}
+	return conn.(nm.Connection), args.Error(1)
 }
 
 func (m *MockActiveConnection) GetPropertySpecificObject() (nm.AccessPoint, error) {

@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/common"
 	"strings"
 )
 
@@ -29,10 +30,21 @@ func verify(newSettings *v1.NetworkSettings, configurator *NetworkConfigurator) 
 
 	for _, element := range newSettings.Interfaces {
 
+		// GSM interface should be verified first, 
+		// Check the APN and if specified, the DNS server addresses, then it checks that the nameserver IP(s) are valid.
+		// if the GSM interface we are validating then we should not continue with other validations like MAC address, 
+		// static IP configuration and routes because they are not relevant for GSM interface 
+		if element.GetGsmConfiguration() != nil {
+			verifyGSMConfigNotEmpty(element, resultOut)
+			if element.DNSConfig != nil {
+				verifyDNS(element, resultOut)
+			}
+			continue
+		}
+
 		if element.Label == "" {
 			verifyMAC(element, resultOut, configurator)
 		}
-
 
 		if element.Static != nil {
 			verifyStaticConf(element, resultOut)
@@ -43,6 +55,9 @@ func verify(newSettings *v1.NetworkSettings, configurator *NetworkConfigurator) 
 
 		verifyRoutes(element, resultOut)
 	}
+
+	verifySingleDefaultGateway(newSettings, resultOut)
+
 	errorMessages := resultOut.builder.String()
 	var err error
 	if len(errorMessages) > 0 {
@@ -51,6 +66,14 @@ func verify(newSettings *v1.NetworkSettings, configurator *NetworkConfigurator) 
 		log.Println(errorMessages)
 	}
 	return resultOut.retVal, err
+}
+
+func verifyGSMConfigNotEmpty(element *v1.Interface, result *verifyResult) {
+	if len(element.GetGsmConfiguration().GetApn()) == 0 {
+		result.retVal = false
+		result.builder.WriteString("Minimum GSM configuration is empty - APN is missing\n")
+		return
+	}
 }
 
 func verifyMAC(element *v1.Interface, result *verifyResult, configurator *NetworkConfigurator) {
@@ -62,7 +85,7 @@ func verifyMAC(element *v1.Interface, result *verifyResult, configurator *Networ
 		val := configurator.getDeviceWithMac(element.MacAddress)
 		if val == nil {
 			result.retVal = false
-			result.builder.WriteString(fmt.Sprintf("device does not exist: mac address %s \n", element.MacAddress))
+			result.builder.WriteString(fmt.Sprintf("no network interface found for the specified mac address: mac address %s \n", element.MacAddress))
 		}
 	}
 }
@@ -124,9 +147,26 @@ func verifyRoutes(element *v1.Interface, result *verifyResult) {
 			result.builder.WriteString(fmt.Sprintf("wrong route next-hop address %s \n", val))
 		}
 
-		if val := route.GetMetric(); val < MinRouteMetric {
+		if val := route.GetMetric(); val < common.MinRouteMetric {
 			result.retVal = false
 			result.builder.WriteString(fmt.Sprintf("wrong route metric %d <= 1 \n", val))
 		}
+	}
+}
+
+func verifySingleDefaultGateway(newSettings *v1.NetworkSettings, result *verifyResult) {
+	count := 0
+	for _, element := range newSettings.Interfaces {
+		if element.GatewayInterface {
+			count++
+		}
+	}
+
+	// Only one default gateway interface is allowed
+	// especially important when GSM is used as default gateway
+	// the other ethernet interfaces must not be set as default gateway
+	if count > 1 {
+		result.retVal = false
+		result.builder.WriteString("more than one default gateway interface is not allowed \n")
 	}
 }

@@ -7,26 +7,35 @@ The IE Device Kit API is based on gRPC which provides a modern intermediate proc
 Purpose of these repositories is to share reference implementation of IE Device Kit APIs. You can use existing implementation or adapt it based on your needs.
 
 # IEDK Network Service
-_Network Service_ is a gRPC & Go based network configuration microservice. The network settings of the Edge Devices are configured through this service.
 
-```bash
-    //Returns the settings of all ethernet typed network interfaces
+_Network Service_ is a gRPC & Go based network configuration microservice that provides comprehensive network management capabilities for Industrial Edge Devices. The service supports both Ethernet and GSM network interfaces, enabling flexible network configuration and connection management.
+
+
+```protobuf
+service NetworkService {
+    // Returns the settings of all network interfaces
     rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
    
-    //Returns the current setting for the interface, with given MAC address.
+    // Returns the current setting for the interface with given MAC address
     rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
 
-    //Returns the current setting for the interface,  with given Label.
+    // Returns the current setting for the interface with given Label
     rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
        
-    //Applies given configurations to Network Interfaces.
+    // Applies given configurations to Network Interfaces
     rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
 
+    // Creates a new network connection with the specified connection settings
+    rpc CreateConnection(ConnectionSettings) returns (google.protobuf.Empty);
+
+    // Removes an existing network connection based on the specified connection settings
+    rpc RemoveConnection(ConnectionSettings) returns (google.protobuf.Empty);
+}
 ```
 
 ## Overview
 
-_Network Service_ is developed in the Go programming language and gRPC. More information can be found [here](https://grpc.io/docs/). The _Network Service_ runs as a systemd service within the device that has a debian-based operating system.
+_Network Service_ is developed in the Go programming language using gRPC for inter-process communication. More information about gRPC can be found [here](https://grpc.io/docs/). The _Network Service_ runs as a systemd service within debian-based operating systems and provides a robust network management layer for Industrial Edge applications.
 
 
 ## Getting Started

@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -14,15 +14,20 @@ import (
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking"
+	"networkservice/internal/networking/common"
+
 	"os"
 	"sync"
 	"time"
 
+	nm "github.com/Wifx/gonetworkmanager/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+var ErrNoGSMDevice = errors.New("no gsm device found")
 
 // IEDKService typical IEDK service should implement this.
 type IEDKService interface {
@@ -32,8 +37,15 @@ type IEDKService interface {
 
 // CreateServiceApp creates main app
 func CreateServiceApp() *MainApp {
+	nm, err := nm.NewNetworkManager()
+	if err != nil {
+		log.Printf("failed to connect to NetworkManager: %v", err)
+		return nil
+	}
 	return &MainApp{
-		serverInstance: &networkServer{configurator: networking.NewNetworkConfigurator()},
+		serverInstance: &networkServer{
+			configurator: networking.NewNetworkConfiguratorWithNM(nm),
+		},
 	}
 }
 
@@ -49,6 +61,8 @@ type MainApp struct {
 }
 
 const errMsgInterfaceNotFound = "Interface does not exist on this device!"
+const errMsgCreateConnectionFailed = "Failed to create connection!"
+const errMsgRemoveConnectionFailed = "Failed to remove connection!"
 
 // StartGRPC starts GPRC listen server.
 func (app *MainApp) StartGRPC(args []string) error {
@@ -112,7 +126,7 @@ func (n *networkServer) GetAllInterfaces(ctx context.Context, e *emptypb.Empty) 
 	log.Println("GetAllInterfaces() called")
 	n.Lock()
 
-	retVal := &v1.NetworkSettings{Interfaces: n.configurator.GetEthernetInterfaces()}
+	retVal := &v1.NetworkSettings{Interfaces: n.configurator.GetNetworkInterfaces()}
 
 	n.Unlock()
 	log.Println("GetAllInterfaces() done")
@@ -138,9 +152,9 @@ func (n *networkServer) GetInterfaceWithMac(ctx context.Context,
 	if n.configurator.IsGatewayInterface(request.Mac) {
 		retVal.GatewayInterface = true
 	}
-	
+
 	log.Println("GetInterfaceWithMac() done")
-	
+
 	return retVal, status.New(codes.OK, "GetInterfaceWithMac Done!").Err()
 }
 
@@ -158,7 +172,7 @@ func (n *networkServer) ApplySettings(ctx context.Context, newSettings *v1.Netwo
 		n.Lock()
 
 		if (nil != newSettings.LabelMap) && (0 != len(newSettings.LabelMap)) {
-			err = networking.WriteMapToFile(newSettings.LabelMap, networking.LabelMapFileName)
+			err = networking.WriteMapToFile(newSettings.LabelMap, common.LabelMapFileName)
 		}
 
 		if err == nil {
@@ -192,4 +206,42 @@ func (n *networkServer) GetInterfaceWithLabel(ctx context.Context, request *v1.N
 	log.Println("GetInterfaceWithLabel() done")
 
 	return retVal, state
+}
+
+// CreateConnection creates a new GSM network connection with given settings.
+func (n *networkServer) CreateConnection(ctx context.Context, connSettings *v1.ConnectionSettings) (*emptypb.Empty, error) {
+
+	log.Println("CreateConnection() called")
+	n.Lock()
+	state := status.New(codes.OK, "CreateConnection Done!").Err()
+
+	err := n.configurator.CreateConnection(connSettings)
+
+	if err != nil {
+		log.Println("Failed to create  connection:", err)
+		if errors.Is(err, ErrNoGSMDevice) {
+			state = status.New(codes.NotFound, err.Error()).Err()
+		} else {
+			state = status.New(codes.Internal, errMsgCreateConnectionFailed).Err()
+		}
+	}
+	n.Unlock()
+	log.Println("CreateConnection() done")
+	return &emptypb.Empty{}, state
+}
+
+// RemoveConnection removes an existing GSM network connection with given settings.
+func (n *networkServer) RemoveConnection(ctx context.Context, connSettings *v1.ConnectionSettings) (*emptypb.Empty, error) {
+
+	log.Println("RemoveConnection() called")
+	n.Lock()
+	state := status.New(codes.OK, "RemoveConnection  Done!").Err()
+
+	err := n.configurator.RemoveConnection(connSettings)
+	if err != nil {
+		state = status.New(codes.Internal, errMsgRemoveConnectionFailed).Err()
+	}
+	n.Unlock()
+	log.Println("RemoveConnection() done")
+	return &emptypb.Empty{}, state
 }

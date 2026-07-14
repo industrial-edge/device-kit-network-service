@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2020 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2020 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/common"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,52 +19,51 @@ import (
 
 // Docker macvlan Layer 2 config parameters
 type L2Config struct {
-	interfaceName string
-	netmask  string
-	startIp string
-	ipRange int
-	gateway string
+	interfaceName      string
+	netmask            string
+	startIp            string
+	ipRange            int
+	gateway            string
 	auxiliaryAddresses map[string]string
 }
 
-
 type DockerNetworkLS struct {
-	Name string `json:"Name"`
-	Id string `json:"Id"`
-	Scope string `json:"Scope"`
-	Driver string `json:"Driver"`
-	EnableIPv6 bool `json:"EnableIPv6"`
-	IPAM IPAM `json:"IPAM"`
-	Internal bool `json:"Internal"`
+	Name       string               `json:"Name"`
+	Id         string               `json:"Id"`
+	Scope      string               `json:"Scope"`
+	Driver     string               `json:"Driver"`
+	EnableIPv6 bool                 `json:"EnableIPv6"`
+	IPAM       IPAM                 `json:"IPAM"`
+	Internal   bool                 `json:"Internal"`
 	Containers map[string]Container `json:"Containers"`
-	Options map[string]string `json:"Options"`
-	Labels interface{} `json:"Labels"`
+	Options    map[string]string    `json:"Options"`
+	Labels     interface{}          `json:"Labels"`
 }
 
 type IPAM struct {
-	Driver string `json:"Driver"`
+	Driver  string      `json:"Driver"`
 	Options interface{} `json:"Options"`
-	Config []Conf `json:"Config"`
+	Config  []Conf      `json:"Config"`
 }
 
 type Conf struct {
-	Subnet string `json:"Subnet"`
-	IPRange string `json:"IPRange"`
-	Gateway string `json:"Gateway"`
+	Subnet             string            `json:"Subnet"`
+	IPRange            string            `json:"IPRange"`
+	Gateway            string            `json:"Gateway"`
 	AuxiliaryAddresses map[string]string `json:"AuxiliaryAddresses"`
 }
 
 type Container struct {
-	Name string `json:"Name"`
-	EndPointID string `json:"EndpointID"`
-	MacAddress string `json:"MacAddress"`
+	Name        string `json:"Name"`
+	EndPointID  string `json:"EndpointID"`
+	MacAddress  string `json:"MacAddress"`
 	IPv4Address string `json:"IPv4Address"`
 	IPv6Address string `json:"IPv6Address"`
 }
 
 var execCommand = exec.Command
 
-func dockerNetworkGetMacvlanConnection(interfaceName string) *v1.Interface_L2{
+func dockerNetworkGetMacvlanConnection(interfaceName string) *v1.Interface_L2 {
 	retVal := &v1.Interface_L2{}
 	// Run docker network ls
 	// docker network ls --format "{{.Name}}" --filter driver=macvlan
@@ -87,22 +87,22 @@ func dockerNetworkGetMacvlanConnection(interfaceName string) *v1.Interface_L2{
 		log.Println(err)
 		return retVal
 	}
-	subnetPrefixString :=  strings.Split(structuredData[0].IPAM.Config[0].Subnet, "/")
+	subnetPrefixString := strings.Split(structuredData[0].IPAM.Config[0].Subnet, "/")
 	subnetPrefixUint, _ := strconv.ParseUint(subnetPrefixString[1], 10, 32)
 
 	startIP := strings.Split(structuredData[0].IPAM.Config[0].IPRange, "/")
 	startIPPrefix, _ := strconv.ParseUint(startIP[1], 10, 32)
-    // prefix should be between 0-32
-	if startIPPrefix > 32  || startIPPrefix < 0{
+	// prefix should be between 0-32
+	if startIPPrefix > 32 || startIPPrefix < 0 {
 		return retVal
 	}
 	exponent := 32 - startIPPrefix
 	ipRange := int(math.Pow(2, float64(exponent)))
 
 	// check interface has layer2 config
-    if structuredData[0].Options["parent"] == interfaceName{
-		retVal.NetMask = ParseNetMask(uint32(subnetPrefixUint))
-		retVal.StartingAddressIPv4 =  startIP[0]
+	if structuredData[0].Options["parent"] == interfaceName {
+		retVal.NetMask = common.ParseNetMask(uint32(subnetPrefixUint))
+		retVal.StartingAddressIPv4 = startIP[0]
 		retVal.Range = strconv.Itoa(ipRange)
 		retVal.Gateway = structuredData[0].IPAM.Config[0].Gateway
 		retVal.AuxiliaryAddresses = make(map[string]string)
@@ -110,7 +110,7 @@ func dockerNetworkGetMacvlanConnection(interfaceName string) *v1.Interface_L2{
 		for key, value := range structuredData[0].IPAM.Config[0].AuxiliaryAddresses {
 			retVal.AuxiliaryAddresses[key] = value
 		}
-    }
+	}
 
 	return retVal
 }
