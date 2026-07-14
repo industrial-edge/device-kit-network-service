@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2021 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2021 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -8,19 +8,16 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 option go_package = ".;siemens_iedge_dmapi_v1";
 package siemens.iedge.dmapi.network.v1;
-
+ 
 // Contains MAC address, used for retrieving specified Network Interface settings.
 message NetworkInterfaceRequest  {
     string mac = 1;
-
+    
 }
 // Returns an Network Interface with 
 message NetworkInterfaceRequestWithLabel {
     string label =1;
 }
-
-
-
 
 // Interface type holds settings for a Network Interface.
 message Interface {
@@ -51,18 +48,49 @@ message Interface {
         string Gateway =4; //e.g: 192.168.2.1
         map<string,string> AuxiliaryAddresses =5;  //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5 
     }
-    L2 L2Conf = 6;
-    string InterfaceName = 7;  // ens2p
-    string Label =8 ; // x1
+   L2 L2Conf = 6;
+   string InterfaceName = 7;  // ens2p 
+   string Label =8 ; // x1
 
-    message Route {
-        string Destination = 1; // Required. Dotted decimal IP address, e.g: 192.168.5.0
-        string Netmask = 2; // Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0
-        string NextHop = 3; // Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined.
-        uint32 Metric = 4; // Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100
+   message Route {
+       string Destination = 1; // Required. Dotted decimal IP address, e.g: 192.168.5.0
+       string Netmask = 2; // Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0
+       string NextHop = 3; // Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined.
+       uint32 Metric = 4; // Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100
+   }
+    message GsmConf {
+        string Apn = 1;      // Required. Access Point Name, e.g.: "internet"
+        string Pin = 2;      // Optional. SIM card PIN
+        string Username = 3; // Optional. APN Username for authentication
+        string Password = 4; // Optional. APN Password for authentication
     }
-    repeated Route Routes = 9; // a list of routes for the interface.
+   repeated Route Routes = 9; // a list of routes for the interface.
+   enum InterfaceTypeEnum {
+        ETHERNET = 0;
+        GSM = 1;
+    }
+   optional InterfaceTypeEnum InterfaceType = 10;
+
+   GsmConf GsmConfiguration = 11; 
+
 }
+
+message ConnectionSettings {
+    string Name = 1; // Connection name, e.g.: "Cellular Connection 1"
+
+    enum ConnectionType {
+       UNKNOWN = 0;   // Unspecified
+       GSM = 1;       // GSM-type connections
+
+    }
+
+    ConnectionType connection_type = 2;
+
+    oneof connection_config {
+        Interface.GsmConf gsm = 3; // <-- Reusing GsmConf from Interface
+    }  
+}
+
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.
 message NetworkSettings {
@@ -75,17 +103,22 @@ message NetworkSettings {
 // protoc  generates both client and server instance for this Service.
 // GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
 service NetworkService {
-
+    
     //Returns the settings of all ethernet typed network interfaces
     rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
-
+   
     //Returns the current setting for the interface, with given MAC address.
     rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
 
     //Returns the current setting for the interface,  with given Label.
     rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
-
+       
     //Applies given configurations to Network Interfaces.
     rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
 
+    //Creates a new network connection with the specified connection settings.
+    rpc CreateConnection(ConnectionSettings) returns (google.protobuf.Empty);
+
+    //Removes an existing network connection based on the specified connection settings.
+    rpc RemoveConnection(ConnectionSettings) returns (google.protobuf.Empty);
 }

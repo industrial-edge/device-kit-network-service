@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2024 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -17,6 +17,10 @@ type MockSettings struct {
 
 func (m *MockSettings) ListConnections() ([]Connection, error) {
 	args := m.Called()
+	connections := args.Get(0)
+	if connections == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]Connection), args.Error(1)
 }
 
@@ -32,7 +36,11 @@ func (m *MockSettings) GetConnectionByUUID(uuid string) (Connection, error) {
 
 func (m *MockSettings) AddConnection(settings ConnectionSettings) (Connection, error) {
 	args := m.Called(settings)
-	return args.Get(0).(Connection), args.Error(1)
+	conn := args.Get(0)
+	if conn == nil {
+		return nil, args.Error(1)
+	}
+	return conn.(Connection), args.Error(1)
 }
 
 func (m *MockSettings) AddConnectionUnsaved(settings ConnectionSettings) (Connection, error) {

@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2024 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -9,13 +9,16 @@ package networking
 import (
 	"errors"
 	_ "errors"
+	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/mocks/gonetworkmanager"
+	mockgnm "networkservice/internal/networking/mocks/gonetworkmanager"
+	"reflect"
+	"strings"
+	"testing"
+
 	nm "github.com/Wifx/gonetworkmanager/v2"
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/stretchr/testify/assert"
-	v1 "networkservice/api/siemens_iedge_dmapi_v1"
-	mockgnm "networkservice/internal/networking/mocks/gonetworkmanager"
-	"strings"
-	"testing"
 )
 
 func createMockVerifyResult(retVal bool) *verifyResult {
@@ -54,7 +57,7 @@ func TestVerifyMAC(t *testing.T) {
 	result := createMockVerifyResult(true)
 
 	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac,
-		func(_ *NetworkConfigurator, _ string) nm.DeviceWired { return new(mockgnm.MockDeviceWired) })
+		func(_ *NetworkConfigurator, _ string) nm.Device { return new(mockgnm.MockDevice) })
 
 	defer patches.Reset()
 
@@ -80,13 +83,13 @@ func TestVerifyMAC_DeviceDoesNotExist(t *testing.T) {
 	result := createMockVerifyResult(true)
 
 	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac,
-		func(_ *NetworkConfigurator, _ string) nm.DeviceWired { return nil })
+		func(_ *NetworkConfigurator, _ string) nm.Device { return nil })
 	defer patches.Reset()
 
 	verifyMAC(input, result, configurator)
 
 	assert.False(t, result.retVal, "verifyMAC should return false when the device does not exist")
-	assert.Equal(t, result.builder.String(), "device does not exist: mac address 20:87:56:b5:ed:e0 \n", "verifyMAC should append an error message when the device does not exist")
+	assert.Equal(t, result.builder.String(), "no network interface found for the specified mac address: mac address 20:87:56:b5:ed:e0 \n", "verifyMAC should append an error message when the device does not exist")
 }
 
 func TestVerifyStaticConf_IPv4Invalid(t *testing.T) {
@@ -140,16 +143,16 @@ func TestVerifyDNS_SecondaryDNSInvalid(t *testing.T) {
 }
 
 func TestVerify_AllConditionsValid(t *testing.T) {
+	// Arrange:
 	input := &v1.NetworkSettings{
 		Interfaces: []*v1.Interface{
 			{
-				Label:      "",
-				MacAddress: "20:87:56:b5:ed:e0",
-			},
-			{
-				Label: "valid-label",
+				InterfaceName: "eno1",
+				InterfaceType: v1.Interface_ETHERNET.Enum(),
+				MacAddress:    "20:87:56:b5:ed:e0",
+				DHCP:          "enabled",
 				Static: &v1.Interface_StaticConf{
-					IPv4:    "192.168.0.2",
+					IPv4:    "192.168.0.1",
 					NetMask: "255.255.255.0",
 					Gateway: "192.168.0.1",
 				},
@@ -158,19 +161,336 @@ func TestVerify_AllConditionsValid(t *testing.T) {
 					SecondaryDNS: "8.8.8.8",
 				},
 			},
+			{
+				GatewayInterface: true,
+				InterfaceType:    v1.Interface_GSM.Enum(),
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "user",
+					Password: "pass",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
 		},
 	}
-	configurator := &NetworkConfigurator{}
 
-	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac, func(_ *NetworkConfigurator, _ string) nm.DeviceWired {
-		return new(mockgnm.MockDeviceWired)
+	mockDeviceWired := new(gonetworkmanager.MockDeviceWired)
+
+	mockNetworkManager := new(gonetworkmanager.MockNetworkManager)
+
+	configurator := &NetworkConfigurator{
+		gnm: mockNetworkManager,
+	}
+
+	patches := gomonkey.ApplyPrivateMethod(reflect.TypeFor[*NetworkConfigurator](), "getDeviceWithMac", func(_ string) (nm.DeviceWired, error) {
+		return mockDeviceWired, nil
 	})
 	defer patches.Reset()
 
+	// Act:
 	valid, err := verify(input, configurator)
 
+	// Assert:
 	assert.True(t, valid, "verify should return true when all conditions are valid")
 	assert.NoError(t, err, "verify should not return an error when all conditions are valid")
+}
+
+func TestVerify_MultipleErrors(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+				Static: &v1.Interface_StaticConf{
+					IPv4:    "192.168.0.256",
+					NetMask: "255.255.255.0",
+					Gateway: "192.168.0.1",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.1.1.1",
+					SecondaryDNS: "8.8.8.8",
+				},
+			},
+			{
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "user",
+					Password: "pass",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	mockDeviceWired := new(gonetworkmanager.MockDeviceWired)
+
+	mockNetworkManager := new(gonetworkmanager.MockNetworkManager)
+
+	configurator := &NetworkConfigurator{
+		gnm: mockNetworkManager,
+	}
+
+	patches := gomonkey.ApplyPrivateMethod(reflect.TypeFor[*NetworkConfigurator](), "getDeviceWithMac", func(_ string) (nm.DeviceWired, error) {
+		return mockDeviceWired, nil
+	})
+	defer patches.Reset()
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.False(t, valid, "verify should return false when multiple errors are present")
+	assert.Error(t, err, "verify should return an error when multiple errors are present")
+
+	expectedErrorMessages := []string{
+		"wrong ip address 192.168.0.256",
+		"wrong mac address mac",
+	}
+	for _, msg := range expectedErrorMessages {
+		assert.Contains(t, err.Error(), msg)
+	}
+}
+
+func TestVerify_GSMConfigValidWithNoInterfaceType(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "",
+					Password: "",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.True(t, valid, "verify should return true when APN is provided in GSM configuration")
+	assert.Nil(t, err, "verify should not return an error when APN is provided in GSM configuration")
+
+}
+
+func TestVerify_GSMConfigValidWithEthernetInterfaceType(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+				InterfaceType: v1.Interface_ETHERNET.Enum(),
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "",
+					Password: "",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.True(t, valid, "verify should return true when APN is provided in GSM configuration")
+	assert.Nil(t, err, "verify should not return an error when APN is provided in GSM configuration")
+
+}
+
+func TestVerify_GSMConfigEmptyWithGSMInterfaceType(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+				InterfaceType: v1.Interface_GSM.Enum(),
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "",
+					Pin:      "",
+					Username: "",
+					Password: "",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.False(t, valid, "verify should return false when APN is empty in GSM configuration")
+	expectedErrorMessage := "Minimum GSM configuration is empty - APN is missing"
+	assert.Contains(t, err.Error(), expectedErrorMessage)
+
+}
+
+func TestVerify_GSMConfigValidWithGSMInterfaceType(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+				InterfaceType: v1.Interface_GSM.Enum(),
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "",
+					Password: "",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.True(t, valid, "verify should return true when APN is provided in GSM configuration")
+	assert.Nil(t, err, "verify should not return an error when APN is provided in GSM configuration")
+
+}
+
+func TestVerify_GSMConfigEmptyWithEthernet(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName: "eno1",
+				MacAddress:    "mac",
+				DHCP:          "enabled",
+				InterfaceType: v1.Interface_ETHERNET.Enum(),
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "",
+					Pin:      "",
+					Username: "",
+					Password: "",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.False(t, valid, "verify should return false when APN is empty in GSM configuration")
+	expectedErrorMessage := "Minimum GSM configuration is empty - APN is missing"
+	assert.Contains(t, err.Error(), expectedErrorMessage)
+}
+
+func TestVerify_MultipleDefaultGateways(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				InterfaceName:    "eno1",
+				MacAddress:       "20:87:56:b5:ed:e0",
+				DHCP:             "enabled",
+				GatewayInterface: true,
+				Static: &v1.Interface_StaticConf{
+					IPv4:    "192.168.0.1",
+					NetMask: "255.255.255.0",
+					Gateway: "192.168.0.1",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.1.1.1",
+					SecondaryDNS: "8.8.8.8",
+				},
+			},
+			{
+				Label:            "gsm0",
+				DHCP:             "enabled",
+				GatewayInterface: true,
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "user",
+					Password: "pass",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	mockDeviceWired := new(gonetworkmanager.MockDeviceWired)
+
+	mockNetworkManager := new(gonetworkmanager.MockNetworkManager)
+
+	configurator := &NetworkConfigurator{
+		gnm: mockNetworkManager,
+	}
+
+	patches := gomonkey.ApplyPrivateMethod(reflect.TypeFor[*NetworkConfigurator](), "getDeviceWithMac", func(_ string) (nm.DeviceWired, error) {
+		return mockDeviceWired, nil
+	})
+	defer patches.Reset()
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.False(t, valid, "verify should return false when multiple default gateways are set")
+	assert.Error(t, err, "verify should return an error when multiple default gateways are set")
+
+	wantErrorMessage := "more than one default gateway interface is not allowed"
+	assert.Contains(t, err.Error(), wantErrorMessage)
 }
 
 func TestVerify_MacAddressInvalid(t *testing.T) {
@@ -184,12 +504,6 @@ func TestVerify_MacAddressInvalid(t *testing.T) {
 	}
 
 	configurator := &NetworkConfigurator{}
-	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac,
-		func(_ *NetworkConfigurator, _ string) nm.DeviceWired {
-			return nil
-		},
-	)
-	defer patches.Reset()
 
 	valid, err := verify(input, configurator)
 
@@ -210,11 +524,6 @@ func TestVerify_StaticConfInvalid(t *testing.T) {
 	}
 
 	configurator := &NetworkConfigurator{}
-	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac,
-		func(_ *NetworkConfigurator, _ string) nm.DeviceWired {
-			return new(mockgnm.MockDeviceWired)
-		})
-	defer patches.Reset()
 
 	valid, err := verify(input, configurator)
 
@@ -235,16 +544,40 @@ func TestVerify_DNSInvalid(t *testing.T) {
 	}
 
 	configurator := &NetworkConfigurator{}
-	patches := gomonkey.ApplyFunc((*NetworkConfigurator).getDeviceWithMac,
-		func(_ *NetworkConfigurator, _ string) nm.DeviceWired {
-			return new(mockgnm.MockDeviceWired)
-		})
-	defer patches.Reset()
 
 	valid, err := verify(input, configurator)
 
 	assert.False(t, valid, "verify should return false when DNSConfig is invalid")
 	assert.Error(t, err, "verify should return an error when DNS")
+}
+
+func TestVerify_ValidGSMConfigOnly(t *testing.T) {
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				Label:            "gsm0",
+				DHCP:             "enabled",
+				GatewayInterface: true,
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "internet",
+					Pin:      "1234",
+					Username: "user",
+					Password: "pass",
+				},
+				DNSConfig: &v1.Interface_Dns{
+					PrimaryDNS:   "1.0.0.1",
+					SecondaryDNS: "8.8.4.4",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	valid, err := verify(input, configurator)
+
+	assert.True(t, valid, "verify should return true when only GSMConfig is set")
+	assert.NoError(t, err, "verify should not return an error when only GSMConfig is set")
 }
 
 func TestVerifyRoutes_InvalidDestination(t *testing.T) {
@@ -353,4 +686,356 @@ func TestVerifyRoutes_ValidRoute(t *testing.T) {
 	verifyRoutes(input, result)
 	assert.True(t, result.retVal)
 	assert.Empty(t, result.builder.String())
+}
+
+func Test_verifyGSM_NonDefaultGateway(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "1.0.0.1",
+			SecondaryDNS: "8.8.4.4",
+		},
+	}
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+	result := createMockVerifyResult(true)
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, result.retVal)
+}
+
+func Test_verifyGSM_InvalidPrimaryDNS(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "invalid-dns",
+			SecondaryDNS: "8.8.4.4",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+	// Assert:
+	assert.False(t, validConfig)
+	assert.Contains(t, err.Error(), "wrong dns address invalid-dns")
+}
+
+func Test_verifyGSM_InvalidSecondaryDNS(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "1.0.0.1",
+			SecondaryDNS: "invalid-dns",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.False(t, validConfig)
+	assert.Contains(t, err.Error(), "wrong dns address invalid-dns")
+}
+
+func Test_verifyGSM_EmptyDNSConfig(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		Label:            "gsm0",
+		DHCP:             "enabled",
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, validConfig, "verifyGSM should pass when DNSConfig is empty for GSM interface")
+	assert.Nil(t, err, " DNS config is optional for GSM interface")
+}
+
+func Test_verifyGSM_ValidConfiguration(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "8.8.8.8",
+			SecondaryDNS: "8.8.4.4",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, validConfig, "verifyGSM should pass with valid configuration")
+	assert.Nil(t, err, "Should have no error messages")
+}
+
+func Test_verifyGSM_ValidConfigurationNoDNS(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: nil,
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+	result := createMockVerifyResult(true)
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, result.retVal, "verifyGSM should pass when DNS config is nil")
+	assert.Empty(t, result.builder.String(), "Should have no error messages")
+}
+
+func Test_verifyGSM_MultipleErrors(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: false, // Not set as default gateway
+		InterfaceType:    v1.Interface_GSM.Enum(),
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "invalid-primary",
+			SecondaryDNS: "invalid-secondary",
+		},
+	}
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.False(t, validConfig, "verifyGSM should fail with multiple errors")
+	assert.Contains(t, err.Error(), "wrong dns address invalid-primary")
+	assert.Contains(t, err.Error(), "wrong dns address invalid-secondary")
+
+}
+
+func Test_verifyGSM_OnlyPrimaryDNS(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "8.8.8.8",
+			SecondaryDNS: "", // Empty secondary DNS
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, validConfig, "verifyGSM should pass with only primary DNS")
+	assert.Nil(t, err, "Should have no error messages")
+}
+
+func Test_verifyGSM_OnlySecondaryDNS(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "", // Empty primary DNS
+			SecondaryDNS: "8.8.4.4",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, validConfig, "verifyGSM should pass with only secondary DNS")
+	assert.Nil(t, err, "Should have no error messages")
+}
+
+func Test_verifyGSM_EmptyDNSAddresses(t *testing.T) {
+	// Arrange:
+	element := &v1.Interface{
+		GatewayInterface: true,
+		GsmConfiguration: &v1.Interface_GsmConf{
+			Apn:      "internet",
+			Pin:      "1234",
+			Username: "user",
+			Password: "pass",
+		},
+		DNSConfig: &v1.Interface_Dns{
+			PrimaryDNS:   "",
+			SecondaryDNS: "",
+		},
+	}
+
+	newSetting := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			element,
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	validConfig, err := verify(newSetting, configurator)
+
+	// Assert:
+	assert.True(t, validConfig, "verifyGSM should pass with empty DNS addresses")
+	assert.Nil(t, err, "Should have no error messages when DNS addresses are empty")
+}
+
+func TestVerify_MixedInterfaceTypesWithErrors(t *testing.T) {
+	// Arrange:
+	input := &v1.NetworkSettings{
+		Interfaces: []*v1.Interface{
+			{
+				// Ethernet interface with invalid MAC
+				Label:      "test-ethernet",
+				MacAddress: "invalid-mac",
+				Static: &v1.Interface_StaticConf{
+					IPv4:    "192.168.1.100",
+					NetMask: "255.255.255.0",
+					Gateway: "192.168.1.1",
+				},
+			},
+			{
+				// GSM interface with empty APN
+				GsmConfiguration: &v1.Interface_GsmConf{
+					Apn:      "", // Invalid: empty APN
+					Pin:      "1234",
+					Username: "user",
+					Password: "pass",
+				},
+			},
+		},
+	}
+
+	configurator := &NetworkConfigurator{}
+
+	// Act:
+	valid, err := verify(input, configurator)
+
+	// Assert:
+	assert.False(t, valid, "verify should return false with mixed interface errors")
+	assert.Error(t, err, "verify should return an error with mixed interface errors")
+
+	assert.Contains(t, err.Error(), "Minimum GSM configuration is empty - APN is missing")
 }

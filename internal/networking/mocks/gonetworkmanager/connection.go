@@ -1,5 +1,5 @@
 /*
- * Copyright © Siemens 2024 - 2025. ALL RIGHTS RESERVED.
+ * Copyright © Siemens 2024 - 2026. ALL RIGHTS RESERVED.
  * Licensed under the MIT license
  * See LICENSE file in the top-level directory
  */
@@ -123,7 +123,11 @@ func (m *MockConnection) Delete() error {
 
 func (m *MockConnection) GetSettings() (ConnectionSettings, error) {
 	args := m.Called()
-	return args.Get(0).(ConnectionSettings), args.Error(1)
+	connSettings := args.Get(0)
+	if connSettings == nil {
+		return nil, args.Error(1)
+	}
+	return connSettings.(ConnectionSettings), args.Error(1)
 }
 
 func (m *MockConnection) GetSecrets(settingName string) (ConnectionSettings, error) {
