@@ -16,12 +16,13 @@
 package siemens_iedge_dmapi_v1
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -74,7 +75,7 @@ func (x Interface_InterfaceTypeEnum) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Interface_InterfaceTypeEnum.Descriptor instead.
 func (Interface_InterfaceTypeEnum) EnumDescriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 0}
+	return file_Network_proto_rawDescGZIP(), []int{3, 0}
 }
 
 type ConnectionSettings_ConnectionType int32
@@ -120,7 +121,7 @@ func (x ConnectionSettings_ConnectionType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionSettings_ConnectionType.Descriptor instead.
 func (ConnectionSettings_ConnectionType) EnumDescriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{3, 0}
+	return file_Network_proto_rawDescGZIP(), []int{5, 0}
 }
 
 // Contains MAC address, used for retrieving specified Network Interface settings.
@@ -168,7 +169,7 @@ func (x *NetworkInterfaceRequest) GetMac() string {
 	return ""
 }
 
-// Returns an Network Interface with
+// Contains interface label, used for retrieving specified Network Interface settings.
 type NetworkInterfaceRequestWithLabel struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
@@ -213,18 +214,63 @@ func (x *NetworkInterfaceRequestWithLabel) GetLabel() string {
 	return ""
 }
 
+// Contains interface name, used for retrieving specified Network Interface settings
+type GetConnectionStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InterfaceName string                 `protobuf:"bytes,1,opt,name=interfaceName,proto3" json:"interfaceName,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetConnectionStatusRequest) Reset() {
+	*x = GetConnectionStatusRequest{}
+	mi := &file_Network_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetConnectionStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetConnectionStatusRequest) ProtoMessage() {}
+
+func (x *GetConnectionStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_Network_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetConnectionStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetConnectionStatusRequest) Descriptor() ([]byte, []int) {
+	return file_Network_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetConnectionStatusRequest) GetInterfaceName() string {
+	if x != nil {
+		return x.InterfaceName
+	}
+	return ""
+}
+
 // Interface type holds settings for a Network Interface.
 type Interface struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	GatewayInterface bool                         `protobuf:"varint,1,opt,name=GatewayInterface,proto3" json:"GatewayInterface,omitempty"` // if true, route metric will be set to 1. Otherwise route metric is -1. Similarly, when the interface is requested,return value will be true if route metric is 1.
 	MacAddress       string                       `protobuf:"bytes,2,opt,name=MacAddress,proto3" json:"MacAddress,omitempty"`              // "20:87:56:b5:ed:e0"
-	DHCP             string                       `protobuf:"bytes,3,opt,name=DHCP,proto3" json:"DHCP,omitempty"`                          // values can be 'enabled' or 'disabled'. for compatiblity reasons it is not boolean.
+	DHCP             string                       `protobuf:"bytes,3,opt,name=DHCP,proto3" json:"DHCP,omitempty"`                          // values can be 'enabled' or 'disabled'. for compatibility reasons it is not boolean.
 	Static           *Interface_StaticConf        `protobuf:"bytes,4,opt,name=Static,proto3" json:"Static,omitempty"`                      // Static field is StaticConf type instance.
 	DNSConfig        *Interface_Dns               `protobuf:"bytes,5,opt,name=DNSConfig,proto3" json:"DNSConfig,omitempty"`                // DNSConfig is dns type instance.
 	L2Conf           *Interface_L2                `protobuf:"bytes,6,opt,name=L2Conf,proto3" json:"L2Conf,omitempty"`
 	InterfaceName    string                       `protobuf:"bytes,7,opt,name=InterfaceName,proto3" json:"InterfaceName,omitempty"` // ens2p
 	Label            string                       `protobuf:"bytes,8,opt,name=Label,proto3" json:"Label,omitempty"`                 // x1
-	Routes           []*Interface_Route           `protobuf:"bytes,9,rep,name=Routes,proto3" json:"Routes,omitempty"`               // a list of routes for the interface.
+	Routes           []*Interface_Route           `protobuf:"bytes,9,rep,name=Routes,proto3" json:"Routes,omitempty"`               // List of routes configured for the interface.
 	InterfaceType    *Interface_InterfaceTypeEnum `protobuf:"varint,10,opt,name=InterfaceType,proto3,enum=siemens.iedge.dmapi.network.v1.Interface_InterfaceTypeEnum,oneof" json:"InterfaceType,omitempty"`
 	GsmConfiguration *Interface_GsmConf           `protobuf:"bytes,11,opt,name=GsmConfiguration,proto3" json:"GsmConfiguration,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -233,7 +279,7 @@ type Interface struct {
 
 func (x *Interface) Reset() {
 	*x = Interface{}
-	mi := &file_Network_proto_msgTypes[2]
+	mi := &file_Network_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -245,7 +291,7 @@ func (x *Interface) String() string {
 func (*Interface) ProtoMessage() {}
 
 func (x *Interface) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[2]
+	mi := &file_Network_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -258,7 +304,7 @@ func (x *Interface) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface.ProtoReflect.Descriptor instead.
 func (*Interface) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2}
+	return file_Network_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Interface) GetGatewayInterface() bool {
@@ -338,6 +384,100 @@ func (x *Interface) GetGsmConfiguration() *Interface_GsmConf {
 	return nil
 }
 
+// Contains runtime connection status information for a network interface.
+type ConnectionStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Common status fields across all interface types.
+	UpdatedAt              string `protobuf:"bytes,1,opt,name=UpdatedAt,proto3" json:"UpdatedAt,omitempty"`                           // RFC 3339 formatted timestamp, for example: "2006-01-02T15:04:05Z07:00"
+	ConnectionState        string `protobuf:"bytes,2,opt,name=ConnectionState,proto3" json:"ConnectionState,omitempty"`               // Current connection state.
+	ConnectionFailedReason string `protobuf:"bytes,3,opt,name=ConnectionFailedReason,proto3" json:"ConnectionFailedReason,omitempty"` // Failure reason when the connection is not established.
+	// Type-specific status details.
+	//
+	// Types that are valid to be assigned to Details:
+	//
+	//	*ConnectionStatus_Gsm
+	Details       isConnectionStatus_Details `protobuf_oneof:"Details"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionStatus) Reset() {
+	*x = ConnectionStatus{}
+	mi := &file_Network_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionStatus) ProtoMessage() {}
+
+func (x *ConnectionStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_Network_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionStatus.ProtoReflect.Descriptor instead.
+func (*ConnectionStatus) Descriptor() ([]byte, []int) {
+	return file_Network_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConnectionStatus) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *ConnectionStatus) GetConnectionState() string {
+	if x != nil {
+		return x.ConnectionState
+	}
+	return ""
+}
+
+func (x *ConnectionStatus) GetConnectionFailedReason() string {
+	if x != nil {
+		return x.ConnectionFailedReason
+	}
+	return ""
+}
+
+func (x *ConnectionStatus) GetDetails() isConnectionStatus_Details {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *ConnectionStatus) GetGsm() *ConnectionStatus_CellularStatus {
+	if x != nil {
+		if x, ok := x.Details.(*ConnectionStatus_Gsm); ok {
+			return x.Gsm
+		}
+	}
+	return nil
+}
+
+type isConnectionStatus_Details interface {
+	isConnectionStatus_Details()
+}
+
+type ConnectionStatus_Gsm struct {
+	Gsm *ConnectionStatus_CellularStatus `protobuf:"bytes,4,opt,name=Gsm,proto3,oneof"`
+}
+
+func (*ConnectionStatus_Gsm) isConnectionStatus_Details() {}
+
 type ConnectionSettings struct {
 	state          protoimpl.MessageState            `protogen:"open.v1"`
 	Name           string                            `protobuf:"bytes,1,opt,name=Name,proto3" json:"Name,omitempty"` // Connection name, e.g.: "Cellular Connection 1"
@@ -352,7 +492,7 @@ type ConnectionSettings struct {
 
 func (x *ConnectionSettings) Reset() {
 	*x = ConnectionSettings{}
-	mi := &file_Network_proto_msgTypes[3]
+	mi := &file_Network_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +504,7 @@ func (x *ConnectionSettings) String() string {
 func (*ConnectionSettings) ProtoMessage() {}
 
 func (x *ConnectionSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[3]
+	mi := &file_Network_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +517,7 @@ func (x *ConnectionSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionSettings.ProtoReflect.Descriptor instead.
 func (*ConnectionSettings) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{3}
+	return file_Network_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ConnectionSettings) GetName() string {
@@ -431,7 +571,7 @@ type NetworkSettings struct {
 
 func (x *NetworkSettings) Reset() {
 	*x = NetworkSettings{}
-	mi := &file_Network_proto_msgTypes[4]
+	mi := &file_Network_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -443,7 +583,7 @@ func (x *NetworkSettings) String() string {
 func (*NetworkSettings) ProtoMessage() {}
 
 func (x *NetworkSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[4]
+	mi := &file_Network_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -456,7 +596,7 @@ func (x *NetworkSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkSettings.ProtoReflect.Descriptor instead.
 func (*NetworkSettings) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{4}
+	return file_Network_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *NetworkSettings) GetInterfaces() []*Interface {
@@ -485,7 +625,7 @@ type Interface_StaticConf struct {
 
 func (x *Interface_StaticConf) Reset() {
 	*x = Interface_StaticConf{}
-	mi := &file_Network_proto_msgTypes[5]
+	mi := &file_Network_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -497,7 +637,7 @@ func (x *Interface_StaticConf) String() string {
 func (*Interface_StaticConf) ProtoMessage() {}
 
 func (x *Interface_StaticConf) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[5]
+	mi := &file_Network_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -510,7 +650,7 @@ func (x *Interface_StaticConf) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface_StaticConf.ProtoReflect.Descriptor instead.
 func (*Interface_StaticConf) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 0}
+	return file_Network_proto_rawDescGZIP(), []int{3, 0}
 }
 
 func (x *Interface_StaticConf) GetIPv4() string {
@@ -545,7 +685,7 @@ type Interface_Dns struct {
 
 func (x *Interface_Dns) Reset() {
 	*x = Interface_Dns{}
-	mi := &file_Network_proto_msgTypes[6]
+	mi := &file_Network_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -557,7 +697,7 @@ func (x *Interface_Dns) String() string {
 func (*Interface_Dns) ProtoMessage() {}
 
 func (x *Interface_Dns) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[6]
+	mi := &file_Network_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -570,7 +710,7 @@ func (x *Interface_Dns) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface_Dns.ProtoReflect.Descriptor instead.
 func (*Interface_Dns) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 1}
+	return file_Network_proto_rawDescGZIP(), []int{3, 1}
 }
 
 func (x *Interface_Dns) GetPrimaryDNS() string {
@@ -600,7 +740,7 @@ type Interface_L2 struct {
 
 func (x *Interface_L2) Reset() {
 	*x = Interface_L2{}
-	mi := &file_Network_proto_msgTypes[7]
+	mi := &file_Network_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -612,7 +752,7 @@ func (x *Interface_L2) String() string {
 func (*Interface_L2) ProtoMessage() {}
 
 func (x *Interface_L2) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[7]
+	mi := &file_Network_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -625,7 +765,7 @@ func (x *Interface_L2) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface_L2.ProtoReflect.Descriptor instead.
 func (*Interface_L2) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 2}
+	return file_Network_proto_rawDescGZIP(), []int{3, 2}
 }
 
 func (x *Interface_L2) GetStartingAddressIPv4() string {
@@ -675,7 +815,7 @@ type Interface_Route struct {
 
 func (x *Interface_Route) Reset() {
 	*x = Interface_Route{}
-	mi := &file_Network_proto_msgTypes[8]
+	mi := &file_Network_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +827,7 @@ func (x *Interface_Route) String() string {
 func (*Interface_Route) ProtoMessage() {}
 
 func (x *Interface_Route) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[8]
+	mi := &file_Network_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +840,7 @@ func (x *Interface_Route) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface_Route.ProtoReflect.Descriptor instead.
 func (*Interface_Route) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 3}
+	return file_Network_proto_rawDescGZIP(), []int{3, 3}
 }
 
 func (x *Interface_Route) GetDestination() string {
@@ -731,9 +871,10 @@ func (x *Interface_Route) GetMetric() uint32 {
 	return 0
 }
 
+// Contains GSM connection parameters for the interface.
 type Interface_GsmConf struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Apn           string                 `protobuf:"bytes,1,opt,name=Apn,proto3" json:"Apn,omitempty"`           // Required. Access Point Name, e.g.: "internet"
+	Apn           string                 `protobuf:"bytes,1,opt,name=Apn,proto3" json:"Apn,omitempty"`           // Required. Access Point Name, for example: "internet"
 	Pin           string                 `protobuf:"bytes,2,opt,name=Pin,proto3" json:"Pin,omitempty"`           // Optional. SIM card PIN
 	Username      string                 `protobuf:"bytes,3,opt,name=Username,proto3" json:"Username,omitempty"` // Optional. APN Username for authentication
 	Password      string                 `protobuf:"bytes,4,opt,name=Password,proto3" json:"Password,omitempty"` // Optional. APN Password for authentication
@@ -743,7 +884,7 @@ type Interface_GsmConf struct {
 
 func (x *Interface_GsmConf) Reset() {
 	*x = Interface_GsmConf{}
-	mi := &file_Network_proto_msgTypes[9]
+	mi := &file_Network_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +896,7 @@ func (x *Interface_GsmConf) String() string {
 func (*Interface_GsmConf) ProtoMessage() {}
 
 func (x *Interface_GsmConf) ProtoReflect() protoreflect.Message {
-	mi := &file_Network_proto_msgTypes[9]
+	mi := &file_Network_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +909,7 @@ func (x *Interface_GsmConf) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Interface_GsmConf.ProtoReflect.Descriptor instead.
 func (*Interface_GsmConf) Descriptor() ([]byte, []int) {
-	return file_Network_proto_rawDescGZIP(), []int{2, 4}
+	return file_Network_proto_rawDescGZIP(), []int{3, 4}
 }
 
 func (x *Interface_GsmConf) GetApn() string {
@@ -799,6 +940,99 @@ func (x *Interface_GsmConf) GetPassword() string {
 	return ""
 }
 
+// Contains cellular-specific runtime status.
+type ConnectionStatus_CellularStatus struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	BearerConnected      bool                   `protobuf:"varint,1,opt,name=BearerConnected,proto3" json:"BearerConnected,omitempty"`           // True if the cellular bearer is connected.
+	AccessTechnology     string                 `protobuf:"bytes,2,opt,name=AccessTechnology,proto3" json:"AccessTechnology,omitempty"`          // Radio access technology, for example: LTE.
+	SignalQualityPercent uint32                 `protobuf:"varint,3,opt,name=SignalQualityPercent,proto3" json:"SignalQualityPercent,omitempty"` // Signal quality as a percentage in the range [0, 100].
+	OperatorName         string                 `protobuf:"bytes,4,opt,name=OperatorName,proto3" json:"OperatorName,omitempty"`                  // Network operator name.
+	OperatorCode         string                 `protobuf:"bytes,5,opt,name=OperatorCode,proto3" json:"OperatorCode,omitempty"`                  // Network operator code.
+	RegistrationState    string                 `protobuf:"bytes,6,opt,name=RegistrationState,proto3" json:"RegistrationState,omitempty"`        // Cellular registration state.
+	RoamingState         string                 `protobuf:"bytes,7,opt,name=RoamingState,proto3" json:"RoamingState,omitempty"`                  // Roaming state.
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ConnectionStatus_CellularStatus) Reset() {
+	*x = ConnectionStatus_CellularStatus{}
+	mi := &file_Network_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionStatus_CellularStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionStatus_CellularStatus) ProtoMessage() {}
+
+func (x *ConnectionStatus_CellularStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_Network_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionStatus_CellularStatus.ProtoReflect.Descriptor instead.
+func (*ConnectionStatus_CellularStatus) Descriptor() ([]byte, []int) {
+	return file_Network_proto_rawDescGZIP(), []int{4, 0}
+}
+
+func (x *ConnectionStatus_CellularStatus) GetBearerConnected() bool {
+	if x != nil {
+		return x.BearerConnected
+	}
+	return false
+}
+
+func (x *ConnectionStatus_CellularStatus) GetAccessTechnology() string {
+	if x != nil {
+		return x.AccessTechnology
+	}
+	return ""
+}
+
+func (x *ConnectionStatus_CellularStatus) GetSignalQualityPercent() uint32 {
+	if x != nil {
+		return x.SignalQualityPercent
+	}
+	return 0
+}
+
+func (x *ConnectionStatus_CellularStatus) GetOperatorName() string {
+	if x != nil {
+		return x.OperatorName
+	}
+	return ""
+}
+
+func (x *ConnectionStatus_CellularStatus) GetOperatorCode() string {
+	if x != nil {
+		return x.OperatorCode
+	}
+	return ""
+}
+
+func (x *ConnectionStatus_CellularStatus) GetRegistrationState() string {
+	if x != nil {
+		return x.RegistrationState
+	}
+	return ""
+}
+
+func (x *ConnectionStatus_CellularStatus) GetRoamingState() string {
+	if x != nil {
+		return x.RoamingState
+	}
+	return ""
+}
+
 var File_Network_proto protoreflect.FileDescriptor
 
 const file_Network_proto_rawDesc = "" +
@@ -807,7 +1041,9 @@ const file_Network_proto_rawDesc = "" +
 	"\x17NetworkInterfaceRequest\x12\x10\n" +
 	"\x03mac\x18\x01 \x01(\tR\x03mac\"8\n" +
 	" NetworkInterfaceRequestWithLabel\x12\x14\n" +
-	"\x05label\x18\x01 \x01(\tR\x05label\"\x95\v\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\"B\n" +
+	"\x1aGetConnectionStatusRequest\x12$\n" +
+	"\rinterfaceName\x18\x01 \x01(\tR\rinterfaceName\"\x95\v\n" +
 	"\tInterface\x12*\n" +
 	"\x10GatewayInterface\x18\x01 \x01(\bR\x10GatewayInterface\x12\x1e\n" +
 	"\n" +
@@ -855,7 +1091,21 @@ const file_Network_proto_rawDesc = "" +
 	"\x11InterfaceTypeEnum\x12\f\n" +
 	"\bETHERNET\x10\x00\x12\a\n" +
 	"\x03GSM\x10\x01B\x10\n" +
-	"\x0e_InterfaceType\"\x98\x02\n" +
+	"\x0e_InterfaceType\"\xa9\x04\n" +
+	"\x10ConnectionStatus\x12\x1c\n" +
+	"\tUpdatedAt\x18\x01 \x01(\tR\tUpdatedAt\x12(\n" +
+	"\x0fConnectionState\x18\x02 \x01(\tR\x0fConnectionState\x126\n" +
+	"\x16ConnectionFailedReason\x18\x03 \x01(\tR\x16ConnectionFailedReason\x12S\n" +
+	"\x03Gsm\x18\x04 \x01(\v2?.siemens.iedge.dmapi.network.v1.ConnectionStatus.CellularStatusH\x00R\x03Gsm\x1a\xb4\x02\n" +
+	"\x0eCellularStatus\x12(\n" +
+	"\x0fBearerConnected\x18\x01 \x01(\bR\x0fBearerConnected\x12*\n" +
+	"\x10AccessTechnology\x18\x02 \x01(\tR\x10AccessTechnology\x122\n" +
+	"\x14SignalQualityPercent\x18\x03 \x01(\rR\x14SignalQualityPercent\x12\"\n" +
+	"\fOperatorName\x18\x04 \x01(\tR\fOperatorName\x12\"\n" +
+	"\fOperatorCode\x18\x05 \x01(\tR\fOperatorCode\x12,\n" +
+	"\x11RegistrationState\x18\x06 \x01(\tR\x11RegistrationState\x12\"\n" +
+	"\fRoamingState\x18\a \x01(\tR\fRoamingStateB\t\n" +
+	"\aDetails\"\x98\x02\n" +
 	"\x12ConnectionSettings\x12\x12\n" +
 	"\x04Name\x18\x01 \x01(\tR\x04Name\x12j\n" +
 	"\x0fconnection_type\x18\x02 \x01(\x0e2A.siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionTypeR\x0econnectionType\x12E\n" +
@@ -871,14 +1121,15 @@ const file_Network_proto_rawDesc = "" +
 	"\bLabelMap\x18\x02 \x03(\v2=.siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntryR\bLabelMap\x1a;\n" +
 	"\rLabelMapEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x89\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x8e\x06\n" +
 	"\x0eNetworkService\x12[\n" +
 	"\x10GetAllInterfaces\x12\x16.google.protobuf.Empty\x1a/.siemens.iedge.dmapi.network.v1.NetworkSettings\x12y\n" +
 	"\x13GetInterfaceWithMac\x127.siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest\x1a).siemens.iedge.dmapi.network.v1.Interface\x12\x84\x01\n" +
 	"\x15GetInterfaceWithLabel\x12@.siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel\x1a).siemens.iedge.dmapi.network.v1.Interface\x12X\n" +
 	"\rApplySettings\x12/.siemens.iedge.dmapi.network.v1.NetworkSettings\x1a\x16.google.protobuf.Empty\x12^\n" +
 	"\x10CreateConnection\x122.siemens.iedge.dmapi.network.v1.ConnectionSettings\x1a\x16.google.protobuf.Empty\x12^\n" +
-	"\x10RemoveConnection\x122.siemens.iedge.dmapi.network.v1.ConnectionSettings\x1a\x16.google.protobuf.EmptyB\x1aZ\x18.;siemens_iedge_dmapi_v1b\x06proto3"
+	"\x10RemoveConnection\x122.siemens.iedge.dmapi.network.v1.ConnectionSettings\x1a\x16.google.protobuf.Empty\x12\x82\x01\n" +
+	"\x12GetInterfaceStatus\x12:.siemens.iedge.dmapi.network.v1.GetConnectionStatusRequest\x1a0.siemens.iedge.dmapi.network.v1.ConnectionStatusB\x1aZ\x18.;siemens_iedge_dmapi_v1b\x06proto3"
 
 var (
 	file_Network_proto_rawDescOnce sync.Once
@@ -893,53 +1144,59 @@ func file_Network_proto_rawDescGZIP() []byte {
 }
 
 var file_Network_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_Network_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_Network_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_Network_proto_goTypes = []any{
 	(Interface_InterfaceTypeEnum)(0),         // 0: siemens.iedge.dmapi.network.v1.Interface.InterfaceTypeEnum
 	(ConnectionSettings_ConnectionType)(0),   // 1: siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType
 	(*NetworkInterfaceRequest)(nil),          // 2: siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest
 	(*NetworkInterfaceRequestWithLabel)(nil), // 3: siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel
-	(*Interface)(nil),                        // 4: siemens.iedge.dmapi.network.v1.Interface
-	(*ConnectionSettings)(nil),               // 5: siemens.iedge.dmapi.network.v1.ConnectionSettings
-	(*NetworkSettings)(nil),                  // 6: siemens.iedge.dmapi.network.v1.NetworkSettings
-	(*Interface_StaticConf)(nil),             // 7: siemens.iedge.dmapi.network.v1.Interface.StaticConf
-	(*Interface_Dns)(nil),                    // 8: siemens.iedge.dmapi.network.v1.Interface.Dns
-	(*Interface_L2)(nil),                     // 9: siemens.iedge.dmapi.network.v1.Interface.L2
-	(*Interface_Route)(nil),                  // 10: siemens.iedge.dmapi.network.v1.Interface.Route
-	(*Interface_GsmConf)(nil),                // 11: siemens.iedge.dmapi.network.v1.Interface.GsmConf
-	nil,                                      // 12: siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry
-	nil,                                      // 13: siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry
-	(*emptypb.Empty)(nil),                    // 14: google.protobuf.Empty
+	(*GetConnectionStatusRequest)(nil),       // 4: siemens.iedge.dmapi.network.v1.GetConnectionStatusRequest
+	(*Interface)(nil),                        // 5: siemens.iedge.dmapi.network.v1.Interface
+	(*ConnectionStatus)(nil),                 // 6: siemens.iedge.dmapi.network.v1.ConnectionStatus
+	(*ConnectionSettings)(nil),               // 7: siemens.iedge.dmapi.network.v1.ConnectionSettings
+	(*NetworkSettings)(nil),                  // 8: siemens.iedge.dmapi.network.v1.NetworkSettings
+	(*Interface_StaticConf)(nil),             // 9: siemens.iedge.dmapi.network.v1.Interface.StaticConf
+	(*Interface_Dns)(nil),                    // 10: siemens.iedge.dmapi.network.v1.Interface.Dns
+	(*Interface_L2)(nil),                     // 11: siemens.iedge.dmapi.network.v1.Interface.L2
+	(*Interface_Route)(nil),                  // 12: siemens.iedge.dmapi.network.v1.Interface.Route
+	(*Interface_GsmConf)(nil),                // 13: siemens.iedge.dmapi.network.v1.Interface.GsmConf
+	nil,                                      // 14: siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry
+	(*ConnectionStatus_CellularStatus)(nil),  // 15: siemens.iedge.dmapi.network.v1.ConnectionStatus.CellularStatus
+	nil,                                      // 16: siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry
+	(*emptypb.Empty)(nil),                    // 17: google.protobuf.Empty
 }
 var file_Network_proto_depIdxs = []int32{
-	7,  // 0: siemens.iedge.dmapi.network.v1.Interface.Static:type_name -> siemens.iedge.dmapi.network.v1.Interface.StaticConf
-	8,  // 1: siemens.iedge.dmapi.network.v1.Interface.DNSConfig:type_name -> siemens.iedge.dmapi.network.v1.Interface.Dns
-	9,  // 2: siemens.iedge.dmapi.network.v1.Interface.L2Conf:type_name -> siemens.iedge.dmapi.network.v1.Interface.L2
-	10, // 3: siemens.iedge.dmapi.network.v1.Interface.Routes:type_name -> siemens.iedge.dmapi.network.v1.Interface.Route
+	9,  // 0: siemens.iedge.dmapi.network.v1.Interface.Static:type_name -> siemens.iedge.dmapi.network.v1.Interface.StaticConf
+	10, // 1: siemens.iedge.dmapi.network.v1.Interface.DNSConfig:type_name -> siemens.iedge.dmapi.network.v1.Interface.Dns
+	11, // 2: siemens.iedge.dmapi.network.v1.Interface.L2Conf:type_name -> siemens.iedge.dmapi.network.v1.Interface.L2
+	12, // 3: siemens.iedge.dmapi.network.v1.Interface.Routes:type_name -> siemens.iedge.dmapi.network.v1.Interface.Route
 	0,  // 4: siemens.iedge.dmapi.network.v1.Interface.InterfaceType:type_name -> siemens.iedge.dmapi.network.v1.Interface.InterfaceTypeEnum
-	11, // 5: siemens.iedge.dmapi.network.v1.Interface.GsmConfiguration:type_name -> siemens.iedge.dmapi.network.v1.Interface.GsmConf
-	1,  // 6: siemens.iedge.dmapi.network.v1.ConnectionSettings.connection_type:type_name -> siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType
-	11, // 7: siemens.iedge.dmapi.network.v1.ConnectionSettings.gsm:type_name -> siemens.iedge.dmapi.network.v1.Interface.GsmConf
-	4,  // 8: siemens.iedge.dmapi.network.v1.NetworkSettings.Interfaces:type_name -> siemens.iedge.dmapi.network.v1.Interface
-	13, // 9: siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMap:type_name -> siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry
-	12, // 10: siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddresses:type_name -> siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry
-	14, // 11: siemens.iedge.dmapi.network.v1.NetworkService.GetAllInterfaces:input_type -> google.protobuf.Empty
-	2,  // 12: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithMac:input_type -> siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest
-	3,  // 13: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithLabel:input_type -> siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel
-	6,  // 14: siemens.iedge.dmapi.network.v1.NetworkService.ApplySettings:input_type -> siemens.iedge.dmapi.network.v1.NetworkSettings
-	5,  // 15: siemens.iedge.dmapi.network.v1.NetworkService.CreateConnection:input_type -> siemens.iedge.dmapi.network.v1.ConnectionSettings
-	5,  // 16: siemens.iedge.dmapi.network.v1.NetworkService.RemoveConnection:input_type -> siemens.iedge.dmapi.network.v1.ConnectionSettings
-	6,  // 17: siemens.iedge.dmapi.network.v1.NetworkService.GetAllInterfaces:output_type -> siemens.iedge.dmapi.network.v1.NetworkSettings
-	4,  // 18: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithMac:output_type -> siemens.iedge.dmapi.network.v1.Interface
-	4,  // 19: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithLabel:output_type -> siemens.iedge.dmapi.network.v1.Interface
-	14, // 20: siemens.iedge.dmapi.network.v1.NetworkService.ApplySettings:output_type -> google.protobuf.Empty
-	14, // 21: siemens.iedge.dmapi.network.v1.NetworkService.CreateConnection:output_type -> google.protobuf.Empty
-	14, // 22: siemens.iedge.dmapi.network.v1.NetworkService.RemoveConnection:output_type -> google.protobuf.Empty
-	17, // [17:23] is the sub-list for method output_type
-	11, // [11:17] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	13, // 5: siemens.iedge.dmapi.network.v1.Interface.GsmConfiguration:type_name -> siemens.iedge.dmapi.network.v1.Interface.GsmConf
+	15, // 6: siemens.iedge.dmapi.network.v1.ConnectionStatus.Gsm:type_name -> siemens.iedge.dmapi.network.v1.ConnectionStatus.CellularStatus
+	1,  // 7: siemens.iedge.dmapi.network.v1.ConnectionSettings.connection_type:type_name -> siemens.iedge.dmapi.network.v1.ConnectionSettings.ConnectionType
+	13, // 8: siemens.iedge.dmapi.network.v1.ConnectionSettings.gsm:type_name -> siemens.iedge.dmapi.network.v1.Interface.GsmConf
+	5,  // 9: siemens.iedge.dmapi.network.v1.NetworkSettings.Interfaces:type_name -> siemens.iedge.dmapi.network.v1.Interface
+	16, // 10: siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMap:type_name -> siemens.iedge.dmapi.network.v1.NetworkSettings.LabelMapEntry
+	14, // 11: siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddresses:type_name -> siemens.iedge.dmapi.network.v1.Interface.L2.AuxiliaryAddressesEntry
+	17, // 12: siemens.iedge.dmapi.network.v1.NetworkService.GetAllInterfaces:input_type -> google.protobuf.Empty
+	2,  // 13: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithMac:input_type -> siemens.iedge.dmapi.network.v1.NetworkInterfaceRequest
+	3,  // 14: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithLabel:input_type -> siemens.iedge.dmapi.network.v1.NetworkInterfaceRequestWithLabel
+	8,  // 15: siemens.iedge.dmapi.network.v1.NetworkService.ApplySettings:input_type -> siemens.iedge.dmapi.network.v1.NetworkSettings
+	7,  // 16: siemens.iedge.dmapi.network.v1.NetworkService.CreateConnection:input_type -> siemens.iedge.dmapi.network.v1.ConnectionSettings
+	7,  // 17: siemens.iedge.dmapi.network.v1.NetworkService.RemoveConnection:input_type -> siemens.iedge.dmapi.network.v1.ConnectionSettings
+	4,  // 18: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceStatus:input_type -> siemens.iedge.dmapi.network.v1.GetConnectionStatusRequest
+	8,  // 19: siemens.iedge.dmapi.network.v1.NetworkService.GetAllInterfaces:output_type -> siemens.iedge.dmapi.network.v1.NetworkSettings
+	5,  // 20: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithMac:output_type -> siemens.iedge.dmapi.network.v1.Interface
+	5,  // 21: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceWithLabel:output_type -> siemens.iedge.dmapi.network.v1.Interface
+	17, // 22: siemens.iedge.dmapi.network.v1.NetworkService.ApplySettings:output_type -> google.protobuf.Empty
+	17, // 23: siemens.iedge.dmapi.network.v1.NetworkService.CreateConnection:output_type -> google.protobuf.Empty
+	17, // 24: siemens.iedge.dmapi.network.v1.NetworkService.RemoveConnection:output_type -> google.protobuf.Empty
+	6,  // 25: siemens.iedge.dmapi.network.v1.NetworkService.GetInterfaceStatus:output_type -> siemens.iedge.dmapi.network.v1.ConnectionStatus
+	19, // [19:26] is the sub-list for method output_type
+	12, // [12:19] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_Network_proto_init() }
@@ -947,8 +1204,11 @@ func file_Network_proto_init() {
 	if File_Network_proto != nil {
 		return
 	}
-	file_Network_proto_msgTypes[2].OneofWrappers = []any{}
-	file_Network_proto_msgTypes[3].OneofWrappers = []any{
+	file_Network_proto_msgTypes[3].OneofWrappers = []any{}
+	file_Network_proto_msgTypes[4].OneofWrappers = []any{
+		(*ConnectionStatus_Gsm)(nil),
+	}
+	file_Network_proto_msgTypes[5].OneofWrappers = []any{
 		(*ConnectionSettings_Gsm)(nil),
 	}
 	type x struct{}
@@ -957,7 +1217,7 @@ func file_Network_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_Network_proto_rawDesc), len(file_Network_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -8,22 +8,27 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 option go_package = ".;siemens_iedge_dmapi_v1";
 package siemens.iedge.dmapi.network.v1;
- 
+
 // Contains MAC address, used for retrieving specified Network Interface settings.
-message NetworkInterfaceRequest  {
+message NetworkInterfaceRequest {
     string mac = 1;
-    
 }
-// Returns an Network Interface with 
+
+// Contains interface label, used for retrieving specified Network Interface settings.
 message NetworkInterfaceRequestWithLabel {
-    string label =1;
+    string label = 1;
+}
+
+// Contains interface name, used for retrieving specified Network Interface settings
+message GetConnectionStatusRequest {
+    string interfaceName = 1;
 }
 
 // Interface type holds settings for a Network Interface.
 message Interface {
     bool GatewayInterface = 1; // if true, route metric will be set to 1. Otherwise route metric is -1. Similarly, when the interface is requested,return value will be true if route metric is 1.
     string MacAddress = 2; // "20:87:56:b5:ed:e0"
-    string DHCP = 3; // values can be 'enabled' or 'disabled'. for compatiblity reasons it is not boolean.
+    string DHCP = 3; // values can be 'enabled' or 'disabled'. for compatibility reasons it is not boolean.
 
     // StaticConf type holds IP Netmask and Gateway information
     message StaticConf {
@@ -44,53 +49,78 @@ message Interface {
     message L2 {
         string StartingAddressIPv4 = 1; // e.g: 192.168.0.2
         string NetMask = 2; // e.g: 255.255.255.0
-        string Range = 3;  // e.g: 16
-        string Gateway =4; //e.g: 192.168.2.1
-        map<string,string> AuxiliaryAddresses =5;  //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5 
+        string Range = 3; // e.g: 16
+        string Gateway = 4; //e.g: 192.168.2.1
+        map<string, string> AuxiliaryAddresses = 5; //Preserved addresses for other devices. These addresses won't be assigned to containers. e.g  my_plc,  192.168.0.5
     }
-   L2 L2Conf = 6;
-   string InterfaceName = 7;  // ens2p 
-   string Label =8 ; // x1
+    L2 L2Conf = 6;
+    string InterfaceName = 7; // ens2p
+    string Label = 8; // x1
 
-   message Route {
-       string Destination = 1; // Required. Dotted decimal IP address, e.g: 192.168.5.0
-       string Netmask = 2; // Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0
-       string NextHop = 3; // Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined.
-       uint32 Metric = 4; // Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100
-   }
+    message Route {
+        string Destination = 1; // Required. Dotted decimal IP address, e.g: 192.168.5.0
+        string Netmask = 2; // Required. Netmask formatted as dotted decimal IP address, e.g.: 255.255.255.0
+        string NextHop = 3; // Optional. Dotted decimal gateway IP address, e.g.: 10.0.1.5. If not specified, the route will not have a gateway defined.
+        uint32 Metric = 4; // Required. Route metric within range [2-4294967295] (inclusive), e.g: 2 or 100
+    }
+
+    // Contains GSM connection parameters for the interface.
     message GsmConf {
-        string Apn = 1;      // Required. Access Point Name, e.g.: "internet"
+        string Apn = 1;      // Required. Access Point Name, for example: "internet"
         string Pin = 2;      // Optional. SIM card PIN
         string Username = 3; // Optional. APN Username for authentication
         string Password = 4; // Optional. APN Password for authentication
     }
-   repeated Route Routes = 9; // a list of routes for the interface.
-   enum InterfaceTypeEnum {
+
+    repeated Route Routes = 9; // List of routes configured for the interface.
+
+    enum InterfaceTypeEnum {
         ETHERNET = 0;
         GSM = 1;
     }
-   optional InterfaceTypeEnum InterfaceType = 10;
+    optional InterfaceTypeEnum InterfaceType = 10;
 
-   GsmConf GsmConfiguration = 11; 
+    GsmConf GsmConfiguration = 11;
+}
 
+// Contains runtime connection status information for a network interface.
+message ConnectionStatus {
+    // Common status fields across all interface types.
+    string UpdatedAt = 1; // RFC 3339 formatted timestamp, for example: "2006-01-02T15:04:05Z07:00"
+    string ConnectionState = 2; // Current connection state.
+    string ConnectionFailedReason = 3; // Failure reason when the connection is not established.
+
+    // Contains cellular-specific runtime status.
+    message CellularStatus {
+        bool BearerConnected = 1; // True if the cellular bearer is connected.
+        string AccessTechnology = 2; // Radio access technology, for example: LTE.
+        uint32 SignalQualityPercent = 3; // Signal quality as a percentage in the range [0, 100].
+        string OperatorName = 4; // Network operator name.
+        string OperatorCode = 5; // Network operator code.
+        string RegistrationState = 6; // Cellular registration state.
+        string RoamingState = 7; // Roaming state.
+    }
+
+    // Type-specific status details.
+    oneof Details {
+        CellularStatus Gsm = 4;
+    }
 }
 
 message ConnectionSettings {
     string Name = 1; // Connection name, e.g.: "Cellular Connection 1"
 
     enum ConnectionType {
-       UNKNOWN = 0;   // Unspecified
-       GSM = 1;       // GSM-type connections
-
+        UNKNOWN = 0; // Unspecified
+        GSM = 1; // GSM-type connections
     }
 
     ConnectionType connection_type = 2;
 
     oneof connection_config {
         Interface.GsmConf gsm = 3; // <-- Reusing GsmConf from Interface
-    }  
+    }
 }
-
 
 // Contains multiple network interface settings. It can be used to apply or get the settings.
 message NetworkSettings {
@@ -98,27 +128,29 @@ message NetworkSettings {
     map<string, string> LabelMap = 2; // LabelMap contains port label and corresponding interface-name. e.g key : x1 value: enp2s0
 }
 
-
-// Network service ,uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
-// protoc  generates both client and server instance for this Service.
+// Network service uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
+// protoc generates both client and server instance for this Service.
 // GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
 service NetworkService {
-    
-    //Returns the settings of all ethernet typed network interfaces
+
+    // Returns the settings of all ethernet typed network interfaces.
     rpc GetAllInterfaces(google.protobuf.Empty) returns(NetworkSettings);
-   
-    //Returns the current setting for the interface, with given MAC address.
+
+    // Returns the current setting for the interface, with given MAC address.
     rpc GetInterfaceWithMac(NetworkInterfaceRequest) returns(Interface);
 
-    //Returns the current setting for the interface,  with given Label.
+    // Returns the current setting for the interface, with given Label.
     rpc GetInterfaceWithLabel(NetworkInterfaceRequestWithLabel) returns(Interface);
-       
-    //Applies given configurations to Network Interfaces.
+
+    // Applies the provided configurations to network interfaces.
     rpc ApplySettings(NetworkSettings) returns(google.protobuf.Empty);
 
-    //Creates a new network connection with the specified connection settings.
-    rpc CreateConnection(ConnectionSettings) returns (google.protobuf.Empty);
+    // Creates a new network connection with the specified settings.
+    rpc CreateConnection(ConnectionSettings) returns(google.protobuf.Empty);
 
-    //Removes an existing network connection based on the specified connection settings.
-    rpc RemoveConnection(ConnectionSettings) returns (google.protobuf.Empty);
+    // Removes an existing network connection based on the specified connection settings.
+    rpc RemoveConnection(ConnectionSettings) returns(google.protobuf.Empty);
+
+    // Returns the current connection status for the interface with the given interface name.
+    rpc GetInterfaceStatus(GetConnectionStatusRequest) returns(ConnectionStatus);
 }

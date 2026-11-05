@@ -33,16 +33,8 @@ func (c *ConnUtils) ConfigureGateway(connSettings nm.ConnectionSettings, priorit
 	// Remove IPv6 addresses and routes to avoid possible type mismatch issues
 	// when NetworkManager tries to apply the settings.
 	// Since GSM & Ethernet connections do not use IPv6 configurations, this is acceptable.
-	c.cleanIPv6Settings(connSettings)
-
+	c.CleanIPv6Settings(connSettings)
 	log.Println("Gateway route metric configured successfully")
-}
-
-func (c *ConnUtils) cleanIPv6Settings(connSettings nm.ConnectionSettings) {
-	if connSettings[common.IPV6Key] != nil {
-		delete(connSettings[common.IPV6Key], common.AddressesKey)
-		delete(connSettings[common.IPV6Key], common.RoutesKey)
-	}
 }
 
 func (c *ConnUtils) RetrieveDeviceName(settings nm.ConnectionSettings) string {
@@ -54,7 +46,7 @@ func (c *ConnUtils) RetrieveDeviceName(settings nm.ConnectionSettings) string {
 	}
 
 	if interfaceName, ok := connMap[common.InterfaceNameKey].(string); ok {
-		log.Println("Retrieved device name for connection")
+		log.Println("Interface name retrieved from connection map: ", interfaceName)
 		return interfaceName
 	}
 	return ""
@@ -90,4 +82,11 @@ func (c *ConnUtils) ConfigureDNS(connSettings nm.ConnectionSettings, dnsConfig *
 	}
 
 	log.Println("No DNS configuration provided, skipping DNS setup for connection")
+}
+
+func (c *ConnUtils) CleanIPv6Settings(connSettings nm.ConnectionSettings) {
+	if connSettings[common.IPV6Key] != nil {
+		delete(connSettings[common.IPV6Key], common.AddressesKey)
+		delete(connSettings[common.IPV6Key], common.RoutesKey)
+	}
 }

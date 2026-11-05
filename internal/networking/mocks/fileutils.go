@@ -22,6 +22,12 @@ func (m *MockFileSystem) WriteFile(path string, data []byte, perm os.FileMode) e
 	return args.Error(0)
 }
 
+func (m *MockFileSystem) ReadFile(path string) ([]byte, error) {
+	args := m.Called(path)
+	result, _ := args.Get(0).([]byte)
+	return result, args.Error(1)
+}
+
 func (m *MockFileSystem) RemoveAll(path string) error {
 	args := m.Called(path)
 	return args.Error(0)

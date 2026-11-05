@@ -137,14 +137,14 @@ func (m *ConnectionManager) newNetworkManagerSettings() (nm.Settings, error) {
 }
 
 func (m *ConnectionManager) ActivateConnectionWithRetry(conn nm.Connection, device nm.Device) error {
-	return m.retryWithFibonacciBackoff(m.maxRetries, func() error {
-		return m.ActivateConnection(conn, device)
-	})
+	return m.ActivateConnection(conn, device)
 }
 
 // with maxRetries attempts and Fibonacci backoff strategy, we actively wait for the connection to be activated
-//  instead of relying on the ActivateConnection call to return an error if activation fails.
-// with 7 attempts and an initial delay of 1 second, 33 seconds of cumulative waiting time, 
+//
+//	instead of relying on the ActivateConnection call to return an error if activation fails.
+//
+// with 7 attempts and an initial delay of 1 second, 33 seconds of cumulative waiting time,
 // which is less than the gRPC timeout.
 func (m *ConnectionManager) retryWithFibonacciBackoff(attempts int, fn func() error) error {
 	prevDelay := 0 * time.Second

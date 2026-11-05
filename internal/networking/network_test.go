@@ -12,6 +12,7 @@ import (
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking/common"
+	"networkservice/internal/networking/gsm"
 	"networkservice/internal/networking/mocks/gonetworkmanager"
 	mockgnm "networkservice/internal/networking/mocks/gonetworkmanager"
 	"networkservice/internal/networking/mocks/networking"
@@ -21,6 +22,7 @@ import (
 	nm "github.com/Wifx/gonetworkmanager/v2"
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/godbus/dbus/v5"
+	mm "github.com/maltegrosse/go-modemmanager"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -405,7 +407,6 @@ func Test_GetInterfaceWithLabel_ReturnsCorrectInterface(t *testing.T) {
 
 	patches.ApplyPrivateMethod(reflect.TypeOf(nc), "getDeviceWithLabel",
 		func(_ *NetworkConfigurator, label string) nm.Device { return mockDevice })
-
 	patches.ApplyFunc(DBusToProto, func(device nm.Device) *v1.Interface {
 		actualDeviceType = reflect.TypeOf(device)
 		return &v1.Interface{Label: testLabel}
@@ -1310,6 +1311,9 @@ func Test_CreateConnectionGSM_WhenAddGSMconnection_Succeeds(t *testing.T) {
 	})
 	patches.ApplyMethod(reflect.TypeOf(mockDevice1), "GetPropertyInterface", func(_ nm.Device) (string, error) {
 		return "interfacetest", nil
+	})
+	patches.ApplyMethod(reflect.TypeOf(mockDevice1), "GetPropertyActiveConnection", func(_ nm.Device) (nm.ActiveConnection, error) {
+		return nil, nil
 	})
 	patches.ApplyFunc(nm.NewSettings, func() (nm.Settings, error) {
 		return mockSettings, nil
@@ -2746,4 +2750,180 @@ func Test_GetAllNetworkDevices_SkipsUnsupportedDeviceTypes(t *testing.T) {
 	// Assertions - should only return 1 Ethernet device, skipping WiFi and Bridge
 	assert.Equal(t, 1, len(result), "Should return only supported device types")
 	assert.Equal(t, mockEthernetDevice, result[0], "Should return only Ethernet device")
+}
+
+func Test_GetInterfaceStatus_OfCellular(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+	mockDevice := &mockgnm.MockDevice{}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterFaceName := "gsm1"
+
+	patches.ApplyFunc(gsm.NewGSMModemManager, func() (mm.ModemManager, error) { return nil, nil })
+
+	mockStatus := &v1.ConnectionStatus{
+		ConnectionState: "CONNECTED",
+	}
+	patches.ApplyFunc((*gsm.GSMStatusReader).ReadStatus, func(_ *gsm.GSMStatusReader, _ nm.Device) (*v1.ConnectionStatus, error) {
+		return mockStatus, nil
+	})
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil)
+	mockDevice.On("GetPropertyInterface").Return(testInterFaceName, nil)
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeModem, nil)
+
+	result, err := nc.GetInterfaceStatus(testInterFaceName)
+
+	// Assertions
+	assert.NoError(t, err)
+	assert.Equal(t, "CONNECTED", result.ConnectionState, "GetInterfaceStatus should return the correct connection state")
+}
+
+func Test_GetInterfaceStatus_ReusesCachedGSMStatusReader(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+	mockDevice := &mockgnm.MockDevice{}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterfaceName := "gsm1"
+
+	modemManagerCtorCalls := 0
+	patches.ApplyFunc(gsm.NewGSMModemManager, func() (mm.ModemManager, error) {
+		modemManagerCtorCalls++
+		return nil, nil
+	})
+
+	mockStatus := &v1.ConnectionStatus{ConnectionState: "CONNECTED"}
+	patches.ApplyFunc((*gsm.GSMStatusReader).ReadStatus, func(_ *gsm.GSMStatusReader, _ nm.Device) (*v1.ConnectionStatus, error) {
+		return mockStatus, nil
+	})
+
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil).Twice()
+	mockDevice.On("GetPropertyInterface").Return(testInterfaceName, nil)
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeModem, nil)
+
+	first, err := nc.GetInterfaceStatus(testInterfaceName)
+	assert.NoError(t, err)
+	assert.Equal(t, "CONNECTED", first.ConnectionState)
+
+	second, err := nc.GetInterfaceStatus(testInterfaceName)
+	assert.NoError(t, err)
+	assert.Equal(t, "CONNECTED", second.ConnectionState)
+
+	assert.Equal(t, 1, modemManagerCtorCalls, "ModemManager client should be created once and reused")
+}
+
+func Test_GetInterfaceStatus_OfCellularWithDeviceNotSupportedError(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+	mockDevice := &mockgnm.MockDevice{}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterFaceName := "gsm1"
+
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil)
+	mockDevice.On("GetPropertyInterface").Return(testInterFaceName, nil)
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeEthernet, nil)
+
+	result, err := nc.GetInterfaceStatus(testInterFaceName)
+
+	// Assertions
+	assert.EqualError(t, err, "rpc error: code = InvalidArgument desc = device type is not supported for interface gsm1", "GetInterfaceStatus should return the correct error message")
+	assert.Nil(t, result, "GetInterfaceStatus should return a nil result")
+}
+func Test_GetInterfaceStatus_Without_iface(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterFaceName := ""
+
+	result, err := nc.GetInterfaceStatus(testInterFaceName)
+
+	// Assertions
+	assert.Nil(t, result, "GetInterfaceStatus should return a nil result")
+	assert.EqualError(t, err, "rpc error: code = InvalidArgument desc = interface name is required", "GetInterfaceStatus should return the correct error message")
+}
+
+func Test_GetInterfaceStatus_With_ReadStatus_Error(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+	mockDevice := &mockgnm.MockDevice{}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterFaceName := "gsm1"
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeModem, nil)
+
+	patches.ApplyFunc(gsm.NewGSMModemManager, func() (mm.ModemManager, error) { return nil, nil })
+
+	patches.ApplyFunc((*gsm.GSMStatusReader).ReadStatus, func(_ *gsm.GSMStatusReader, _ nm.Device) (*v1.ConnectionStatus, error) {
+		return nil, errors.New("read status error")
+	})
+
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil)
+	mockDevice.On("GetPropertyInterface").Return(testInterFaceName, nil)
+
+	result, err := nc.GetInterfaceStatus(testInterFaceName)
+
+	// Assertions
+	assert.Nil(t, result, "GetInterfaceStatus should return a nil result")
+	assert.Error(t, err, "GetInterfaceStatus should return an error")
+}
+
+func Test_GetInterfaceStatus_With_ModemManager_Error(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+	mockDevice := &mockgnm.MockDevice{}
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+	testInterFaceName := "gsm1"
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeModem, nil)
+
+	patches.ApplyFunc(gsm.NewGSMModemManager, func() (mm.ModemManager, error) { return nil, errors.New("modem manager error") })
+
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil)
+	mockDevice.On("GetPropertyInterface").Return(testInterFaceName, nil)
+
+	result, err := nc.GetInterfaceStatus(testInterFaceName)
+
+	// Assertions
+	assert.Nil(t, result, "GetInterfaceStatus should return a nil result")
+	assert.Error(t, err, "GetInterfaceStatus should return an error")
+}
+
+func Test_getDeviceByInterfaceName_WithNilClient(t *testing.T) {
+	nc := &NetworkConfigurator{}
+
+	device, err := nc.getDeviceByInterfaceName("gsm1")
+
+	assert.Nil(t, device)
+	assert.EqualError(t, err, "rpc error: code = Unavailable desc = NetworkManager client is nil")
+}
+
+func Test_getDeviceByInterfaceName_NotFound(t *testing.T) {
+	nc := &NetworkConfigurator{}
+	mockNetworkManager := &mockgnm.MockNetworkManager{}
+	nc.gnm = mockNetworkManager
+
+	mockDevice := &mockgnm.MockDevice{}
+	mockNetworkManager.On("GetDevices").Return([]nm.Device{mockDevice}, nil)
+	mockDevice.On("GetPropertyDeviceType").Return(nm.NmDeviceTypeModem, nil)
+	mockDevice.On("GetPropertyInterface").Return("eth0", nil)
+
+	device, err := nc.getDeviceByInterfaceName("gsm1")
+
+	assert.Nil(t, device)
+	assert.EqualError(t, err, "rpc error: code = NotFound desc = no device found for interface: gsm1")
 }
