@@ -350,86 +350,6 @@ func TestNewGSMConfigurator_WithoutDNS_Success(t *testing.T) {
 	assert.Nil(t, got.dnsConfig, "dnsConfig expected to be nil")
 }
 
-func TestGSMConfigurator_retrieveApn_RainyDayScenarios(t *testing.T) {
-	tests := []struct {
-		name     string // description of this test case
-		settings nm.ConnectionSettings
-		want     string
-	}{
-		{
-			name:     "NoGSMSettings",
-			settings: nm.ConnectionSettings{},
-			want:     "",
-		},
-		{
-			name: "NoAPNInGSMSettings",
-			settings: nm.ConnectionSettings{
-				"gsm": map[string]any{
-					"username": "user",
-				},
-			},
-			want: "",
-		},
-		{
-			name: "APNNotString",
-			settings: nm.ConnectionSettings{
-				"gsm": map[string]any{
-					"apn": 1234,
-				},
-			},
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := new(GSMConfigurator)
-			got := c.retrieveApn(tt.settings)
-
-			assert.Equal(t, tt.want, got, "retrieveApn() = %v, want %v", got, tt.want)
-		})
-	}
-}
-
-func TestGSMConfigurator_retrieveUsername_RainyDayScenarios(t *testing.T) {
-	tests := []struct {
-		name     string // description of this test case
-		settings nm.ConnectionSettings
-		want     string
-	}{
-		{
-			name:     "NoGSMSettings",
-			settings: nm.ConnectionSettings{},
-			want:     "",
-		},
-		{
-			name: "NoUsernameInGSMSettings",
-			settings: nm.ConnectionSettings{
-				"gsm": map[string]any{
-					"apn": "internet",
-				},
-			},
-			want: "",
-		},
-		{
-			name: "UsernameNotString",
-			settings: nm.ConnectionSettings{
-				"gsm": map[string]any{
-					"username": 1234,
-				},
-			},
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := new(GSMConfigurator)
-			got := c.retrieveUsername(tt.settings)
-
-			assert.Equal(t, tt.want, got, "retrieveUsername() = %v, want %v", got, tt.want)
-		})
-	}
-}
-
 func TestGSMConfigurator_Configure_Gateway_WithDNS_Success(t *testing.T) {
 	// Arrange
 	testApn := "internet"
@@ -585,6 +505,93 @@ func TestGSMConfigurator_Configure_NotGateway_WithoutDNS_Success(t *testing.T) {
 
 	// Assert
 	assert.NoError(t, err, "expected no error from Configure")
+}
+
+func TestGSMConfigurator_Configure_Ipv6Clear_NotGateway_WithoutDNS_Success(t *testing.T) {
+	// Arrange
+	testApn := "internet"
+	testUsername := "user"
+
+	gsmConfig := &v1.Interface_GsmConf{
+		Apn:      testApn,
+		Pin:      "1234",
+		Username: testUsername,
+		Password: "pass",
+	}
+
+	testDeviceName := "test-gsm-device"
+
+	mockConnection := new(gonetworkmanager.MockConnection)
+	mockConnectionSettings := nm.ConnectionSettings{
+		"connection": map[string]any{
+			"interface-name": testDeviceName,
+			"id":             "iedk-gsm-connection",
+			"type":           "gsm",
+		},
+		"gsm": map[string]any{
+			"apn":      testApn,
+			"username": testUsername,
+		},
+		"ipv6": map[string]any{
+			"dns":             []uint32{134744072},
+			"ignore-auto-dns": 1,
+			"routes":          []string{"1.2.3.3/32"},
+			"addresses":       []string{"23.22.45.67"},
+		},
+	}
+
+	mockNewConnectionSettings := nm.ConnectionSettings{
+		"connection": map[string]any{
+			"interface-name": testDeviceName,
+			"id":             "iedk-gsm-connection",
+			"type":           "gsm",
+		},
+		"gsm": map[string]any{
+			"apn":      testApn,
+			"username": testUsername,
+		},
+		"ipv6": map[string]any{
+			"dns":             []uint32{134744072},
+			"ignore-auto-dns": 1,
+		},
+	}
+
+	mockConnectionManager := new(networking.MockConnectionManager)
+	mockConnectionManager.On("UpdateConnection", mockConnection, mockNewConnectionSettings).Return(nil)
+
+	mockDevice := new(gonetworkmanager.MockDevice)
+	mockDeviceManager := new(networking.MockDeviceManager)
+	mockDeviceManager.On("GetGSMDevice", testDeviceName).Return(mockDevice, nil)
+
+	mockConnectionManager.On("ActivateConnectionWithRetry", mockConnection, mockDevice).Return(nil)
+
+	patches := gomonkey.NewPatches()
+	defer patches.Reset()
+
+	patches.ApplyPrivateMethod(reflect.TypeFor[*GSMConfigurator](), "retrievingConnectionDetails",
+		func(_ *GSMConfigurator, apn, username string) (nm.Connection, nm.ConnectionSettings, error) {
+			assert.Equal(t, testApn, apn, "APN passed to retrievingConnectionDetails does not match expected")
+			assert.Equal(t, testUsername, username, "Username passed to retrievingConnectionDetails does not match expected")
+			return mockConnection, mockConnectionSettings, nil
+		})
+
+	c := &GSMConfigurator{
+		gsmConfig:     gsmConfig,
+		dnsConfig:     nil,
+		connUtils:     connectionmanager.NewConnectionUtils(),
+		connManager:   mockConnectionManager,
+		deviceManager: mockDeviceManager,
+	}
+
+	// Act
+	err := c.Configure()
+
+	// Assert
+	assert.NoError(t, err, "expected no error from Configure")
+	assert.NotNil(t, mockNewConnectionSettings["ipv6"], "expected ipv6 settings to be present")
+	ipv6Settings := mockNewConnectionSettings["ipv6"]
+	assert.NotContains(t, ipv6Settings, "addresses", "expected ipv6 addresses to be removed")
+	assert.NotContains(t, ipv6Settings, "routes", "expected ipv6 routes to be removed")
 }
 
 func TestGSMConfigurator_Configure_WithOnlyPrimaryDNS_Success(t *testing.T) {

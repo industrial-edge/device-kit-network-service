@@ -9,7 +9,6 @@ package gsm
 import (
 	"errors"
 	"log"
-
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking/common"
 	"networkservice/internal/networking/connectionmanager"
@@ -62,7 +61,6 @@ func (c *GSMConfigurator) Configure() error {
 		log.Println("no GSM connection found")
 		return errors.New("no GSM connection found; use CreateConnection RPC first")
 	}
-
 	deviceName := c.connUtils.RetrieveDeviceName(connSettings)
 
 	device, err := c.deviceManager.GetGSMDevice(deviceName)
@@ -73,6 +71,10 @@ func (c *GSMConfigurator) Configure() error {
 	if c.isGateway {
 		log.Println("Configuring GSM connection as gateway...")
 		c.connUtils.ConfigureGateway(connSettings, common.RouteMetricHighestPriority)
+	} else {
+	     // If the GSM interface is not set as the default gateway, we need to clean up any existing IPv6 settings
+	     // to avoid potential conflicts with other interfaces that may have IPv6 enabled.
+		c.connUtils.CleanIPv6Settings(connSettings)
 	}
 
 	log.Println("Configuring DNS for GSM connection...")
@@ -155,40 +157,12 @@ func (c *GSMConfigurator) isGSMConnection(settings nm.ConnectionSettings) bool {
 }
 
 func (c *GSMConfigurator) isConnectionMatch(settings nm.ConnectionSettings, apn, username string) bool {
-	existingApn := c.retrieveApn(settings)
-	existingUsername := c.retrieveUsername(settings)
+	existingApn := extractStringFromSettings(settings, common.GSMSetting, common.APNKey)
+	existingUsername := extractStringFromSettings(settings, common.GSMSetting, common.UsernameKey)
 
 	if existingApn == apn && existingUsername == username {
 		return true
 	}
 	log.Println("Connection not matched")
 	return false
-}
-
-func (c *GSMConfigurator) retrieveApn(settings nm.ConnectionSettings) string {
-	gsmMap, ok := settings[common.GSMSetting]
-	if !ok || gsmMap == nil {
-		log.Println("Connection settings do not have GSM key")
-		return ""
-	}
-
-	if apn, ok := gsmMap[common.APNKey].(string); ok {
-		log.Println("Retrieved APN for existing connection")
-		return apn
-	}
-	return ""
-}
-
-func (c *GSMConfigurator) retrieveUsername(settings nm.ConnectionSettings) string {
-	gsmMap, ok := settings[common.GSMSetting]
-	if !ok || gsmMap == nil {
-		log.Println("Connection settings do not have GSM key")
-		return ""
-	}
-
-	if username, ok := gsmMap[common.UsernameKey].(string); ok {
-		log.Println("Retrieved username for existing connection")
-		return username
-	}
-	return ""
 }

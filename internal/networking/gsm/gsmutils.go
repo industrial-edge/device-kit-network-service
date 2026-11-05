@@ -13,6 +13,9 @@ import (
 
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking/common"
+
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	modemManager "github.com/maltegrosse/go-modemmanager"
 )
 
 const (
@@ -98,4 +101,149 @@ func isValidGsmConfigUserNamePassword(gsmSettings *v1.ConnectionSettings_Gsm) er
 		}
 	}
 	return nil
+}
+
+// ValidateGSMConfigFileContent validates a parsed GSM config file map.
+// It checks the mandatory APN field and, if optional fields (Pin, Username, Password)
+// are present, validates their format against the same rules used for incoming requests.
+func ValidateGSMConfigFileContent(parsed map[string]string) error {
+	apn := parsed[common.GSMConfigKeyAPN]
+	if len(apn) == 0 {
+		return fmt.Errorf("config file missing required APN field")
+	}
+	if !validateAPN(apn) {
+		return fmt.Errorf("config file has invalid APN format: %s", apn)
+	}
+
+	if pin, ok := parsed[common.GSMConfigKeyPIN]; ok && len(pin) > 0 {
+		if !validatePIN(pin) {
+			return fmt.Errorf("config file has invalid PIN format")
+		}
+	}
+
+	return validateFileCredentials(parsed[common.GSMConfigKeyUsername], parsed[common.GSMConfigKeyPassword])
+}
+
+// validateFileCredentials validates the username/password pair from a GSM config file.
+// Both must be present together (if either is provided), and each must match the expected format.
+func validateFileCredentials(username, password string) error {
+	if len(username) > 0 && len(password) == 0 {
+		return fmt.Errorf("config file has Username but missing Password")
+	}
+	if len(password) > 0 && len(username) == 0 {
+		return fmt.Errorf("config file has Password but missing Username")
+	}
+	if len(username) > 0 && !validateUserName(username) {
+		return fmt.Errorf("config file has invalid Username format")
+	}
+	if len(password) > 0 && !validatePassword(password) {
+		return fmt.Errorf("config file has invalid Password format")
+	}
+
+	return nil
+}
+
+// extractStringFromSettings safely extracts a string value from nested ConnectionSettings.
+func extractStringFromSettings(settings nm.ConnectionSettings, section, key string) string {
+	sectionMap, ok := settings[section]
+	if !ok || sectionMap == nil {
+		return ""
+	}
+	if val, ok := sectionMap[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func mapStateFailedReasonToString(reason modemManager.MMModemStateFailedReason) string {
+	switch reason {
+	case modemManager.MmModemStateFailedReasonNone:
+		return common.FailedReasonNone
+	case modemManager.MmModemStateFailedReasonUnknown:
+		return common.FailedReasonUnknown
+	case modemManager.MmModemStateFailedReasonSimMissing:
+		return common.FailedReasonSimMissing
+	case modemManager.MmModemStateFailedReasonSimError:
+		return common.FailedReasonSimError
+	case modemManager.MmModemStateFailedReasonUnknownCapabilities:
+		return common.FailedReasonUnknownCapabilities
+	case modemManager.MmModemStateFailedReasonEsimWithoutProfiles:
+		return common.FailedReasonESimNoProfiles
+	default:
+		return common.FailedReasonUnknown
+	}
+}
+
+// mapProtoConnectionState maps ModemManager modem state to connection state proto enum.
+// Note: MmModemStateRegistered means the modem is registered to a network but has no active data bearer.
+// MmModemStateEnabled means the modem is powered on but not yet registered.
+// In both cases, this returns ConnStateDisconnected because there is no data connection (bearer).
+// Only MmModemStateConnected with an active bearer returns ConnStateConnected.
+func mapProtoConnectionState(state modemManager.MMModemState, bearerConn bool) string {
+
+	switch state {
+	case modemManager.MmModemStateLocked:
+		return common.ConnStateSIMLock
+	case modemManager.MmModemStateConnected:
+		if bearerConn {
+			return common.ConnStateConnected
+		}
+		// Connected modem state may briefly report before bearer state settles.
+		return common.ConnStateConnecting
+	case modemManager.MmModemStateConnecting, modemManager.MmModemStateInitializing, modemManager.MmModemStateEnabling:
+		return common.ConnStateConnecting
+	case modemManager.MmModemStateDisconnecting, modemManager.MmModemStateDisabled, modemManager.MmModemStateDisabling,
+		modemManager.MmModemStateEnabled, modemManager.MmModemStateRegistered, modemManager.MmModemStateSearching,
+		modemManager.MmModemStateFailed:
+		return common.ConnStateDisconnected
+	default:
+		return common.ConnStateUnspecified
+	}
+}
+func mapProtoAccessTechnology(techs []modemManager.MMModemAccessTechnology) string {
+	result := common.AccessTechUnspecified
+
+	for _, t := range techs {
+		switch t {
+		case modemManager.MmModemAccessTechnologyLte:
+			return common.AccessTech4G
+		case modemManager.MmModemAccessTechnologyUmts, modemManager.MmModemAccessTechnologyHsdpa,
+			modemManager.MmModemAccessTechnologyHsupa, modemManager.MmModemAccessTechnologyHspa,
+			modemManager.MmModemAccessTechnologyHspaPlus:
+			if result == common.AccessTechUnspecified || result == common.AccessTech2G {
+				result = common.AccessTech3G
+			}
+		case modemManager.MmModemAccessTechnologyGsm, modemManager.MmModemAccessTechnologyGsmCompact,
+			modemManager.MmModemAccessTechnologyGprs, modemManager.MmModemAccessTechnologyEdge:
+			if result == common.AccessTechUnspecified {
+				result = common.AccessTech2G
+			}
+		default:
+			return result
+		}
+	}
+
+	return result
+}
+
+func mapProtoRegistration(reg modemManager.MMModem3gppRegistrationState) (string, string) {
+	switch reg {
+	case modemManager.MmModem3gppRegistrationStateHome,
+		modemManager.MmModem3gppRegistrationStateHomeSmsOnly,
+		modemManager.MmModem3gppRegistrationStateHomeCsfbNotPreferred:
+		return common.RegStateRegistered, common.RoamingStateHome
+	case modemManager.MmModem3gppRegistrationStateRoaming,
+		modemManager.MmModem3gppRegistrationStateRoamingSmsOnly,
+		modemManager.MmModem3gppRegistrationStateRoamingCsfbNotPreferred:
+		return common.RegStateRegistered, common.RoamingStateRoaming
+	case modemManager.MmModem3gppRegistrationStateSearching:
+		return common.RegStateSearching, common.RoamingStateUnspecified
+	case modemManager.MmModem3gppRegistrationStateDenied,
+		modemManager.MmModem3gppRegistrationStateEmergencyOnly:
+		return common.RegStateDenied, common.RoamingStateUnspecified
+	case modemManager.MmModem3gppRegistrationStateIdle:
+		return common.RegStateIdle, common.RoamingStateUnspecified
+	default:
+		return common.RegStateUnspecified, common.RoamingStateUnspecified
+	}
 }

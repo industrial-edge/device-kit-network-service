@@ -6,7 +6,10 @@
 
 package common
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 // DBUS NetworkManager Key Names
 // Please be considerate of the DBUS key values when you are changing the fields
@@ -49,9 +52,9 @@ const (
 	// IPV6Key
 	IPV6Key = "ipv6"
 	// addresses
-	AddressesKey="addresses"
+	AddressesKey = "addresses"
 	//routes
-	RoutesKey="routes"
+	RoutesKey = "routes"
 	// IDKey
 	IDKey = "id"
 	// TypeKey
@@ -107,6 +110,12 @@ const (
 
 	// GSMConfigParentPath is the parent directory where GSM config info is stored
 	GSMConfigParentPath = "/var/lib/gsm/config"
+
+	// GSM config file JSON keys (capitalized, distinct from NM D-Bus keys)
+	GSMConfigKeyAPN      = "Apn"
+	GSMConfigKeyPIN      = "Pin"
+	GSMConfigKeyUsername = "Username"
+	GSMConfigKeyPassword = "Password"
 	// MinRouteMetric is the minimum value for a route metric for extra routes
 	MinRouteMetric        = 2
 	ValidRegexForAPN      = "^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:\\.[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)*$"
@@ -125,4 +134,51 @@ const (
 	LogNoConnectionKey = "Connection settings do not have connection key"
 
 	ErrLogSuffix = " error: "
+
+	GSMConfigDirPermission  = os.FileMode(0755)
+	GSMConfigFilePermission = os.FileMode(0600)
+)
+
+// Connection state constants
+const (
+	ConnStateSIMLock      = "SIM_LOCKED"
+	ConnStateNoModem      = "NO_MODEM"
+	ConnStateConnected    = "CONNECTED"
+	ConnStateConnecting   = "CONNECTING"
+	ConnStateDisconnected = "DISCONNECTED"
+	ConnStateUnspecified  = "UNSPECIFIED"
+)
+
+// Access technology constants
+const (
+	AccessTech4G          = "4G"
+	AccessTech3G          = "3G"
+	AccessTech2G          = "2G"
+	AccessTechUnspecified = "UNSPECIFIED"
+)
+
+// Registration state constants
+const (
+	RegStateRegistered  = "REGISTERED"
+	RegStateSearching   = "SEARCHING"
+	RegStateDenied      = "DENIED"
+	RegStateIdle        = "IDLE"
+	RegStateUnspecified = "UNSPECIFIED"
+)
+
+// Roaming state constants
+const (
+	RoamingStateHome        = "HOME"
+	RoamingStateRoaming     = "ROAMING"
+	RoamingStateUnspecified = "UNSPECIFIED"
+)
+
+// failed reason constants
+const (
+	FailedReasonNone                = "NO_ERROR"
+	FailedReasonUnknown             = "UNKNOWN_ERROR"
+	FailedReasonSimMissing          = "SIM_MISSING"
+	FailedReasonSimError            = "SIM_ERROR"
+	FailedReasonUnknownCapabilities = "UNKNOWN_CAPABILITIES"
+	FailedReasonESimNoProfiles      = "ESIM_NO_PROFILES"
 )

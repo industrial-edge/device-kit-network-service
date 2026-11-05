@@ -27,7 +27,8 @@ func (m MockDevice) Disconnect() error {
 
 func (m MockDevice) GetPath() dbus.ObjectPath {
 	args := m.Called()
-	return args.Get(0).(dbus.ObjectPath)
+	result, _ := args.Get(0).(dbus.ObjectPath)
+	return result
 }
 
 func (m MockDevice) GetPropertyActiveConnection() (nm.ActiveConnection, error) {
@@ -45,7 +46,8 @@ func (m MockDevice) GetPropertyAutoConnect() (bool, error) {
 
 func (m MockDevice) GetPropertyAvailableConnections() ([]nm.Connection, error) {
 	args := m.Called()
-	return args.Get(0).([]nm.Connection), args.Error(1)
+	result, _ := args.Get(0).([]nm.Connection)
+	return result, args.Error(1)
 }
 
 func (m MockDevice) GetPropertyDHCP4Config() (nm.DHCP4Config, error) {
@@ -58,7 +60,8 @@ func (m MockDevice) GetPropertyDHCP6Config() (nm.DHCP6Config, error) {
 
 func (m MockDevice) GetPropertyDeviceType() (nm.NmDeviceType, error) {
 	args := m.Called()
-	return args.Get(0).(nm.NmDeviceType), args.Error(1)
+	result, _ := args.Get(0).(nm.NmDeviceType)
+	return result, args.Error(1)
 }
 
 func (m MockDevice) GetPropertyDriver() (string, error) {
@@ -120,11 +123,12 @@ func (m MockDevice) GetPropertyReal() (bool, error) {
 
 func (m MockDevice) GetPropertyState() (nm.NmDeviceState, error) {
 	args := m.Called()
-	return args.Get(0).(nm.NmDeviceState), args.Error(1)
+	result, _ := args.Get(0).(nm.NmDeviceState)
+	return result, args.Error(1)
 }
 
 func (m MockDevice) GetPropertyUdi() (string, error) {
-	panic("unimplemented")
+	return m.Called().String(0), nil
 }
 
 func (m MockDevice) MarshalJSON() ([]byte, error) {

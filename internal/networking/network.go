@@ -13,11 +13,16 @@ import (
 	"net"
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
 	"networkservice/internal/networking/common"
+	"networkservice/internal/networking/devicemanager"
 	"networkservice/internal/networking/factory"
+	"networkservice/internal/networking/gsm"
 	"reflect"
 	"strings"
+	"sync"
 
 	nm "github.com/Wifx/gonetworkmanager/v2"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Network interface that can perform
@@ -35,8 +40,10 @@ type Network interface {
 
 // NetworkConfigurator implements Network Interface.
 type NetworkConfigurator struct {
-	gnm            nm.NetworkManager
-	gatewayManager GatewayHelper
+	gnm             nm.NetworkManager
+	gatewayManager  GatewayHelper
+	gsmStatusReader *gsm.GSMStatusReader
+	gsmStatusMu     sync.Mutex
 }
 
 // NewNetworkConfiguratorWithNM creates new NetworkConfigurator instance
@@ -223,7 +230,6 @@ func (nc *NetworkConfigurator) ArePreconditionsOk(newSettings *v1.NetworkSetting
 // Apply Applies given settings, if any error occures all Interfaces in system will be restored to original states.
 func (nc *NetworkConfigurator) Apply(newSettings *v1.NetworkSettings) error {
 	log.Println("Request to apply new network settings...")
-	log.Printf("Received network settings payload: %v", newSettings)
 
 	var hasError bool
 
@@ -369,6 +375,77 @@ func (nc *NetworkConfigurator) RemoveConnection(newSettings *v1.ConnectionSettin
 		return fmt.Errorf("unsupported connection type: %v", connType)
 	}
 	return conn.RemoveConnection(newSettings)
+}
+
+// GetInterfaceStatus returns runtime status of a GSM/LTE/4G interface.
+// It returns an error if the interface is not a GSM/LTE/4G interface or if there is an issue retrieving the status.
+func (nc *NetworkConfigurator) GetInterfaceStatus(interfaceName string) (*v1.ConnectionStatus, error) {
+
+	if interfaceName == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "interface name is required")
+	}
+
+	device, err := nc.getDeviceByInterfaceName(interfaceName)
+	if err != nil {
+		log.Printf("Failed to get device for interface %s: %v", interfaceName, err)
+		return nil, err
+	}
+	if !isDeviceSupported(device) {
+		return nil, status.Errorf(codes.InvalidArgument, "device type is not supported for interface %s", interfaceName)
+	}
+
+	gsmHealthStatus, err := nc.getOrCreateGSMStatusReader()
+	if err != nil {
+		log.Printf("Failed to create ModemManager client: %v", err)
+		return nil, err
+	}
+
+	cellularStatus, err := gsmHealthStatus.ReadStatus(device)
+	if err != nil {
+		log.Printf("Failed to read cellular status for interface %s: %v", interfaceName, err)
+		return nil, err
+	}
+
+	return cellularStatus, nil
+}
+
+func (nc *NetworkConfigurator) getOrCreateGSMStatusReader() (*gsm.GSMStatusReader, error) {
+	nc.gsmStatusMu.Lock()
+	defer nc.gsmStatusMu.Unlock()
+
+	if nc.gsmStatusReader != nil {
+		return nc.gsmStatusReader, nil
+	}
+
+	modemManager, err := gsm.NewGSMModemManager()
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "ModemManager: %v", err)
+	}
+
+	nc.gsmStatusReader = gsm.NewGSMStatusReader(modemManager)
+	return nc.gsmStatusReader, nil
+}
+
+// getDeviceByInterfaceName returns the device corresponding to the given interface name.
+// It returns an error if the device is not found or if there is an issue retrieving the device.
+func (nc *NetworkConfigurator) getDeviceByInterfaceName(ifname string) (nm.Device, error) {
+	if nc.gnm == nil {
+		return nil, status.Error(codes.Unavailable, "NetworkManager client is nil")
+	}
+
+	deviceManager := devicemanager.NewDeviceManager(nc.gnm)
+	devicesMap, err := deviceManager.GetAvailableDevicesMap()
+	if err != nil {
+		return nil, err
+	}
+
+	matchingDevice, exists := devicesMap[ifname]
+	if !exists {
+		log.Println("Device not found: ", ifname)
+		return nil, status.Errorf(codes.NotFound, "no device found for interface: %s", ifname)
+	}
+
+	return matchingDevice, nil
 }
 
 //### PRIVATE functions
@@ -568,4 +645,13 @@ func (nc *NetworkConfigurator) deleteOldConnections(connections []nm.Connection)
 		log.Printf("Connection with Path: %v has been successfully deleted", connection.GetPath())
 	}
 	return nil
+}
+
+func isDeviceSupported(device nm.Device) bool {
+	deviceType, err := device.GetPropertyDeviceType()
+	if err != nil {
+		log.Println("Failed to get device type: ", err)
+		return false
+	}
+	return gsm.IsSupport(deviceType)
 }

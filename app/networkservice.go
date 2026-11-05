@@ -245,3 +245,22 @@ func (n *networkServer) RemoveConnection(ctx context.Context, connSettings *v1.C
 	log.Println("RemoveConnection() done")
 	return &emptypb.Empty{}, state
 }
+
+// GetInterfaceStatus returns the current status of the given cellular network interface.
+func (n *networkServer) GetInterfaceStatus(ctx context.Context,
+	request *v1.GetConnectionStatusRequest) (*v1.ConnectionStatus, error) {
+	log.Println("GetInterfaceStatus() called")
+	state := status.New(codes.OK, "GetInterfaceStatus Done!").Err()
+
+	iStatus, err := n.configurator.GetInterfaceStatus(request.InterfaceName)
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			state = status.New(st.Code(), st.Message()).Err()
+		} else {
+			state = status.New(codes.Internal, err.Error()).Err()
+		}
+	}
+
+	log.Println("GetInterfaceStatus() done")
+	return iStatus, state
+}

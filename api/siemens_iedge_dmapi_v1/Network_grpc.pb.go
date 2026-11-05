@@ -17,6 +17,7 @@ package siemens_iedge_dmapi_v1
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -35,28 +36,31 @@ const (
 	NetworkService_ApplySettings_FullMethodName         = "/siemens.iedge.dmapi.network.v1.NetworkService/ApplySettings"
 	NetworkService_CreateConnection_FullMethodName      = "/siemens.iedge.dmapi.network.v1.NetworkService/CreateConnection"
 	NetworkService_RemoveConnection_FullMethodName      = "/siemens.iedge.dmapi.network.v1.NetworkService/RemoveConnection"
+	NetworkService_GetInterfaceStatus_FullMethodName    = "/siemens.iedge.dmapi.network.v1.NetworkService/GetInterfaceStatus"
 )
 
 // NetworkServiceClient is the client API for NetworkService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Network service ,uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
-// protoc  generates both client and server instance for this Service.
+// Network service uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
+// protoc generates both client and server instance for this Service.
 // GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
 type NetworkServiceClient interface {
-	// Returns the settings of all ethernet typed network interfaces
+	// Returns the settings of all ethernet typed network interfaces.
 	GetAllInterfaces(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*NetworkSettings, error)
 	// Returns the current setting for the interface, with given MAC address.
 	GetInterfaceWithMac(ctx context.Context, in *NetworkInterfaceRequest, opts ...grpc.CallOption) (*Interface, error)
-	// Returns the current setting for the interface,  with given Label.
+	// Returns the current setting for the interface, with given Label.
 	GetInterfaceWithLabel(ctx context.Context, in *NetworkInterfaceRequestWithLabel, opts ...grpc.CallOption) (*Interface, error)
-	// Applies given configurations to Network Interfaces.
+	// Applies the provided configurations to network interfaces.
 	ApplySettings(ctx context.Context, in *NetworkSettings, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// Creates a new network connection with the specified connection settings.
+	// Creates a new network connection with the specified settings.
 	CreateConnection(ctx context.Context, in *ConnectionSettings, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Removes an existing network connection based on the specified connection settings.
 	RemoveConnection(ctx context.Context, in *ConnectionSettings, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Returns the current connection status for the interface with the given interface name.
+	GetInterfaceStatus(ctx context.Context, in *GetConnectionStatusRequest, opts ...grpc.CallOption) (*ConnectionStatus, error)
 }
 
 type networkServiceClient struct {
@@ -127,26 +131,38 @@ func (c *networkServiceClient) RemoveConnection(ctx context.Context, in *Connect
 	return out, nil
 }
 
+func (c *networkServiceClient) GetInterfaceStatus(ctx context.Context, in *GetConnectionStatusRequest, opts ...grpc.CallOption) (*ConnectionStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConnectionStatus)
+	err := c.cc.Invoke(ctx, NetworkService_GetInterfaceStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NetworkServiceServer is the server API for NetworkService service.
 // All implementations must embed UnimplementedNetworkServiceServer
 // for forward compatibility.
 //
-// Network service ,uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
-// protoc  generates both client and server instance for this Service.
+// Network service uses a UNIX Domain Socket "/var/run/devicemodel/network.sock" for GRPC communication.
+// protoc generates both client and server instance for this Service.
 // GRPC Status codes : https://developers.google.com/maps-booking/reference/grpc-api/status_codes .
 type NetworkServiceServer interface {
-	// Returns the settings of all ethernet typed network interfaces
+	// Returns the settings of all ethernet typed network interfaces.
 	GetAllInterfaces(context.Context, *emptypb.Empty) (*NetworkSettings, error)
 	// Returns the current setting for the interface, with given MAC address.
 	GetInterfaceWithMac(context.Context, *NetworkInterfaceRequest) (*Interface, error)
-	// Returns the current setting for the interface,  with given Label.
+	// Returns the current setting for the interface, with given Label.
 	GetInterfaceWithLabel(context.Context, *NetworkInterfaceRequestWithLabel) (*Interface, error)
-	// Applies given configurations to Network Interfaces.
+	// Applies the provided configurations to network interfaces.
 	ApplySettings(context.Context, *NetworkSettings) (*emptypb.Empty, error)
-	// Creates a new network connection with the specified connection settings.
+	// Creates a new network connection with the specified settings.
 	CreateConnection(context.Context, *ConnectionSettings) (*emptypb.Empty, error)
 	// Removes an existing network connection based on the specified connection settings.
 	RemoveConnection(context.Context, *ConnectionSettings) (*emptypb.Empty, error)
+	// Returns the current connection status for the interface with the given interface name.
+	GetInterfaceStatus(context.Context, *GetConnectionStatusRequest) (*ConnectionStatus, error)
 	mustEmbedUnimplementedNetworkServiceServer()
 }
 
@@ -174,6 +190,9 @@ func (UnimplementedNetworkServiceServer) CreateConnection(context.Context, *Conn
 }
 func (UnimplementedNetworkServiceServer) RemoveConnection(context.Context, *ConnectionSettings) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveConnection not implemented")
+}
+func (UnimplementedNetworkServiceServer) GetInterfaceStatus(context.Context, *GetConnectionStatusRequest) (*ConnectionStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInterfaceStatus not implemented")
 }
 func (UnimplementedNetworkServiceServer) mustEmbedUnimplementedNetworkServiceServer() {}
 func (UnimplementedNetworkServiceServer) testEmbeddedByValue()                        {}
@@ -304,6 +323,24 @@ func _NetworkService_RemoveConnection_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NetworkService_GetInterfaceStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConnectionStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkServiceServer).GetInterfaceStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkService_GetInterfaceStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkServiceServer).GetInterfaceStatus(ctx, req.(*GetConnectionStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NetworkService_ServiceDesc is the grpc.ServiceDesc for NetworkService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -334,6 +371,10 @@ var NetworkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveConnection",
 			Handler:    _NetworkService_RemoveConnection_Handler,
+		},
+		{
+			MethodName: "GetInterfaceStatus",
+			Handler:    _NetworkService_GetInterfaceStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

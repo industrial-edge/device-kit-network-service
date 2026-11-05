@@ -13,23 +13,14 @@ import (
 
 // FileSystemOperations is an interface to bring functionality of required file system operations
 // Note: missing functionalities can be added and implemented on demand, functions must be one-to-one mapping from `os` package
+// The methods intentionally mirror os package functions to enable mocking in tests.
 type FileSystemOperations interface {
-
-	// Open os.WriteFile
 	WriteFile(path string, data []byte, perm os.FileMode) error
-	// Open os.RemoveAll
+	ReadFile(path string) ([]byte, error)
 	RemoveAll(path string) error
-
-	// Open os.Chmod
 	Chmod(name string, mode os.FileMode) error
-
-	// Open os.Chown
 	Chown(name string, uid, gid int) error
-
-	// Open os.Stat
 	Stat(path string) error
-
-	// Open os.MkdirAll
 	MkdirAll(path string, perm os.FileMode) error
 }
 

@@ -28,6 +28,7 @@ type ConnectionUtils interface {
 	ConfigureGateway(nm.ConnectionSettings, common.RouteMetricPriority)
 	ConfigureDNS(nm.ConnectionSettings, *v1.Interface_Dns)
 	RetrieveDeviceName(nm.ConnectionSettings) string
+	CleanIPv6Settings(connSettings nm.ConnectionSettings)
 }
 
 type DeviceHelper interface {

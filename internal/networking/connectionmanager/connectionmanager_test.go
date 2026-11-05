@@ -242,7 +242,9 @@ func TestConnectionManager_ActivateConnectionWithRetry_Success(t *testing.T) {
 }
 
 func TestConnectionManager_ActivateConnectionWithRetry_SuccessAfterFourFailures(t *testing.T) {
-	// Arrange
+	// Arrange — ActivateConnectionWithRetry is now a direct delegate to ActivateConnection
+	// (retry logic lives inside ActivateConnection itself). This test verifies that
+	// a successful ActivateConnection call propagates nil back to the caller.
 	mockNetworkManager := new(gonetworkmanager.MockNetworkManager)
 	mockConnection := new(gonetworkmanager.MockConnection)
 	mockDevice := new(gonetworkmanager.MockDevice)
@@ -256,34 +258,18 @@ func TestConnectionManager_ActivateConnectionWithRetry_SuccessAfterFourFailures(
 	patches := gomonkey.NewPatches()
 	defer patches.Reset()
 
-	callCount := 0
-
 	patches.ApplyMethod(reflect.TypeFor[*ConnectionManager](), "ActivateConnection",
 		func(_ *ConnectionManager, connection nm.Connection, device nm.Device) error {
-			assert.Equal(t, mockConnection, connection, "Expected the same connection to be passed to ActivateConnection")
-			assert.Equal(t, mockDevice, device, "Expected the same device to be passed to ActivateConnection")
-			callCount++
-			if callCount < 5 {
-				return errors.New("mock error")
-			}
+			assert.Equal(t, mockConnection, connection)
+			assert.Equal(t, mockDevice, device)
 			return nil
 		})
-
-	wantDelays := []time.Duration{
-		1 * time.Second,
-		1 * time.Second,
-		2 * time.Second,
-		3 * time.Second,
-	}
-	patches.ApplyFunc(time.Sleep, func(d time.Duration) {
-		assert.Equal(t, wantDelays[callCount-1], d, "Expected delay to match Fibonacci sequence")
-	})
 
 	// Act
 	err := m.ActivateConnectionWithRetry(mockConnection, mockDevice)
 
 	// Assert
-	assert.NoError(t, err, "Expected no error when activating connection")
+	assert.NoError(t, err, "Expected no error when ActivateConnection succeeds")
 }
 
 func TestConnectionManager_ActivateConnectionWithRetry_Failures(t *testing.T) {

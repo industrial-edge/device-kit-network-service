@@ -8,9 +8,12 @@ package gsm
 
 import (
 	v1 "networkservice/api/siemens_iedge_dmapi_v1"
+	"networkservice/internal/networking/common"
 
 	"testing"
 
+	nm "github.com/Wifx/gonetworkmanager/v2"
+	mm "github.com/maltegrosse/go-modemmanager"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -914,6 +917,357 @@ func Test_isValidGsmConfigUserNamePassword(t *testing.T) {
 			if tt.wantErr {
 				t.Fatal("isValidGsmConfigUserNamePassword() succeeded unexpectedly")
 			}
+		})
+	}
+}
+
+// extractStringFromSettings test cases
+
+func Test_extractStringFromSettings_ReturnsValueWhenPresent(t *testing.T) {
+	settings := nm.ConnectionSettings{
+		"gsm": map[string]interface{}{
+			"apn": "my-internet",
+		},
+	}
+
+	result := extractStringFromSettings(settings, "gsm", "apn")
+	assert.Equal(t, "my-internet", result)
+}
+
+func Test_extractStringFromSettings_ReturnsEmptyWhenSectionMissing(t *testing.T) {
+	settings := nm.ConnectionSettings{}
+
+	result := extractStringFromSettings(settings, "gsm", "apn")
+	assert.Equal(t, "", result)
+}
+
+func Test_extractStringFromSettings_ReturnsEmptyWhenKeyMissing(t *testing.T) {
+	settings := nm.ConnectionSettings{
+		"gsm": map[string]interface{}{},
+	}
+
+	result := extractStringFromSettings(settings, "gsm", "apn")
+	assert.Equal(t, "", result)
+}
+
+func Test_extractStringFromSettings_ReturnsEmptyWhenValueNotString(t *testing.T) {
+	settings := nm.ConnectionSettings{
+		"gsm": map[string]interface{}{
+			"apn": 12345,
+		},
+	}
+
+	result := extractStringFromSettings(settings, "gsm", "apn")
+	assert.Equal(t, "", result)
+}
+
+func Test_ValidateGSMConfigFileContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		parsed  map[string]string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:   "Valid config with APN only",
+			parsed: map[string]string{"Apn": "internet"},
+		},
+		{
+			name:   "Valid config with all fields",
+			parsed: map[string]string{"Apn": "internet", "Pin": "1234", "Username": "user1", "Password": "pass1"},
+		},
+		{
+			name:   "Valid config with APN and PIN",
+			parsed: map[string]string{"Apn": "internet", "Pin": "5678"},
+		},
+		{
+			name:    "Missing APN",
+			parsed:  map[string]string{"Pin": "1234"},
+			wantErr: true,
+			errMsg:  "missing required APN",
+		},
+		{
+			name:    "Empty APN",
+			parsed:  map[string]string{"Apn": ""},
+			wantErr: true,
+			errMsg:  "missing required APN",
+		},
+		{
+			name:    "Invalid APN format",
+			parsed:  map[string]string{"Apn": "invalid apn!"},
+			wantErr: true,
+			errMsg:  "invalid APN format",
+		},
+		{
+			name:    "Invalid PIN format",
+			parsed:  map[string]string{"Apn": "internet", "Pin": "ab"},
+			wantErr: true,
+			errMsg:  "invalid PIN format",
+		},
+		{
+			name:    "Username without Password",
+			parsed:  map[string]string{"Apn": "internet", "Username": "user1"},
+			wantErr: true,
+			errMsg:  "Username but missing Password",
+		},
+		{
+			name:    "Password without Username",
+			parsed:  map[string]string{"Apn": "internet", "Password": "pass1"},
+			wantErr: true,
+			errMsg:  "Password but missing Username",
+		},
+		{
+			name:    "Invalid Username format",
+			parsed:  map[string]string{"Apn": "internet", "Username": "user@!!", "Password": "pass1"},
+			wantErr: true,
+			errMsg:  "invalid Username format",
+		},
+		{
+			name:    "Username with empty Password",
+			parsed:  map[string]string{"Apn": "internet", "Username": "user1", "Password": ""},
+			wantErr: true,
+			errMsg:  "Username but missing Password",
+		},
+		{
+			name:    "Invalid Password format",
+			parsed:  map[string]string{"Apn": "internet", "Username": "user1", "Password": "pass word"},
+			wantErr: true,
+			errMsg:  "invalid Password format",
+		},
+		{
+			name:   "Empty optional fields are OK",
+			parsed: map[string]string{"Apn": "internet", "Pin": "", "Username": "", "Password": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGSMConfigFileContent(tt.parsed)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_mapStateFailedReasonToString(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		reason mm.MMModemStateFailedReason
+		want   string
+	}{
+		{
+			name:   "No Error",
+			reason: mm.MmModemStateFailedReasonNone,
+			want:   "NO_ERROR",
+		},
+		{
+			name:   "Unknown Error",
+			reason: mm.MmModemStateFailedReasonUnknown,
+			want:   "UNKNOWN_ERROR",
+		},
+		{
+			name:   "SIM Missing",
+			reason: mm.MmModemStateFailedReasonSimMissing,
+			want:   "SIM_MISSING",
+		},
+		{
+			name:   "SIM Error",
+			reason: mm.MmModemStateFailedReasonSimError,
+			want:   "SIM_ERROR",
+		},
+		{
+			name:   "Unknown Capabilities",
+			reason: mm.MmModemStateFailedReasonUnknownCapabilities,
+			want:   "UNKNOWN_CAPABILITIES",
+		},
+		{
+			name:   "eSIM Without Profiles",
+			reason: mm.MmModemStateFailedReasonEsimWithoutProfiles,
+			want:   "ESIM_NO_PROFILES",
+		},
+		{
+			name:   "Fallback For Unknown Value",
+			reason: 111,
+			want:   "UNKNOWN_ERROR",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapStateFailedReasonToString(tt.reason)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_mapProtoConnectionState(t *testing.T) {
+	testCases := []struct {
+		name               string
+		connectionState    mm.MMModemState
+		expectedProtoState string
+		bearerConnected    bool
+	}{
+		{
+			name:               "Registered State",
+			connectionState:    mm.MmModemStateRegistered,
+			expectedProtoState: "DISCONNECTED",
+		},
+		{
+			name:               "Searching State",
+			connectionState:    mm.MmModemStateSearching,
+			expectedProtoState: "DISCONNECTED",
+		},
+		{
+			name:               "Disabled State",
+			connectionState:    mm.MmModemStateDisabled,
+			expectedProtoState: "DISCONNECTED",
+		},
+		{
+			name:               "Locked State",
+			connectionState:    mm.MmModemStateLocked,
+			expectedProtoState: "SIM_LOCKED",
+		},
+		{
+			name:               "Connected State",
+			connectionState:    mm.MmModemStateConnected,
+			expectedProtoState: "CONNECTED",
+			bearerConnected:    true,
+		},
+		{
+			name:               "Connected State Without Bearer",
+			connectionState:    mm.MmModemStateConnected,
+			expectedProtoState: "CONNECTING",
+			bearerConnected:    false,
+		},
+		{
+			name:               "Failed State",
+			connectionState:    mm.MmModemStateFailed,
+			expectedProtoState: "DISCONNECTED",
+		},
+		{
+			name:               "Unknown State",
+			connectionState:    mm.MmModemStateUnknown,
+			expectedProtoState: "UNSPECIFIED",
+		},
+		{
+			name:               "Initializing State",
+			connectionState:    mm.MmModemStateInitializing,
+			expectedProtoState: "CONNECTING",
+		},
+		{
+			name:               "Enabling State",
+			connectionState:    mm.MmModemStateEnabling,
+			expectedProtoState: "CONNECTING",
+		},
+		{
+			name:               "Enabled State",
+			connectionState:    mm.MmModemStateEnabled,
+			expectedProtoState: "DISCONNECTED",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := mapProtoConnectionState(tc.connectionState, tc.bearerConnected)
+			assert.Equal(t, tc.expectedProtoState, result)
+		})
+	}
+}
+
+func Test_mapProtoAccessTechnology(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		techs []mm.MMModemAccessTechnology
+		want  string
+	}{
+		{
+			name:  "4G Technology",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyLte},
+			want:  common.AccessTech4G,
+		},
+		{
+			name:  "3G Technology",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyHspa},
+			want:  common.AccessTech3G,
+		},
+		{
+			name: "2G Technology",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyGsmCompact,
+				mm.MmModemAccessTechnologyGprs, mm.MmModemAccessTechnologyEdge},
+			want: common.AccessTech2G,
+		},
+		{
+			name:  "Empty Technologies",
+			techs: []mm.MMModemAccessTechnology{},
+			want:  common.AccessTechUnspecified,
+		},
+		{
+			name:  "Unknown Technology",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyAny},
+			want:  common.AccessTechUnspecified,
+		},
+		{
+			name:  "Multiple Technologies Selects Highest",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyGsm, mm.MmModemAccessTechnologyLte},
+			want:  common.AccessTech4G,
+		},
+		{
+			name:  "Multiple Technologies Selects Highest Regardless Of Order",
+			techs: []mm.MMModemAccessTechnology{mm.MmModemAccessTechnologyLte, mm.MmModemAccessTechnologyGsm},
+			want:  common.AccessTech4G,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapProtoAccessTechnology(tt.techs)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_mapProtoRegistration(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		reg   mm.MMModem3gppRegistrationState
+		want  string
+		want2 string
+	}{
+		{
+			name:  "Home Registration",
+			reg:   mm.MmModem3gppRegistrationStateHomeSmsOnly,
+			want:  common.RegStateRegistered,
+			want2: common.RoamingStateHome,
+		},
+		{
+			name:  "Roaming Registration",
+			reg:   mm.MmModem3gppRegistrationStateRoamingSmsOnly,
+			want:  common.RegStateRegistered,
+			want2: common.RoamingStateRoaming,
+		},
+		{
+			name:  "Searching Registration",
+			reg:   mm.MmModem3gppRegistrationStateSearching,
+			want:  common.RegStateSearching,
+			want2: common.RoamingStateUnspecified,
+		},
+		{
+			name:  "Denied Registration",
+			reg:   mm.MmModem3gppRegistrationStateDenied,
+			want:  common.RegStateDenied,
+			want2: common.RoamingStateUnspecified,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, got2 := mapProtoRegistration(tt.reg)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want2, got2)
 		})
 	}
 }

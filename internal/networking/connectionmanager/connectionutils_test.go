@@ -87,7 +87,7 @@ func Test_ConnUtils_CleanIPv6Settings(t *testing.T) {
 			"routes":    []string{"2001:db8::/64"},
 		},
 	}
-	c.cleanIPv6Settings(connSettings)
+	c.CleanIPv6Settings(connSettings)
 
 	ipv6Settings := connSettings["ipv6"]
 	assert.NotNil(t, ipv6Settings, "Expected ipv6 settings to be present")
